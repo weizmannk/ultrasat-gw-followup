@@ -139,7 +139,7 @@ def read_params_file(params_file):
             "band": config.get("params", "band"),
             # 'MAG': config.getfloat("params", "MAG"),
             # 'RATE_ADJ': config.getfloat("params", "RATE_ADJ"),
-            "tiling_time": config.get("params", "tiling_time"),
+            # 'tiling_time': config.get("params", "tiling_time")
         }
         logging.debug(f"Parameters read from {params_file}: {params}")
         return params
@@ -164,7 +164,7 @@ def parse_arguments():
     parser.add_argument(
         "--log_dir",
         type=str,
-        default="./logs3",
+        default="./logs3_O5",
         help="Directory for log files (default: ./Logs3).",
     )
     return parser.parse_args()
@@ -196,7 +196,7 @@ def main():
     outdir = os.path.abspath(params["save_directory"])
     obs_scenario_dir = os.path.abspath(params["obs_scenario_dir"])
 
-    tiling_time = params["tiling_time"]
+    # tiling_time = params['tiling_time']
 
     #     # Create all necessary directories
     #     create_directories(outdir)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 ---------------------------------------------------------------------------------------------------
 ABOUT THE SCRIPT
@@ -40,9 +39,8 @@ import pandas as pd
 import numpy as np
 import healpy as hp
 
-
 from astropy import units as u
-from astropy.coordinates import ICRS, SkyCoord, EarthLocation
+from astropy.coordinates import ICRS, SkyCoord, EarthLocation, Distance
 from astropy.io import fits
 from astropy.time import Time
 from astropy_healpix import HEALPix
@@ -50,10 +48,14 @@ from astropy_healpix import HEALPix
 from ligo.skymap.bayestar import rasterize
 from ligo.skymap.io import read_sky_map
 from ligo.skymap.postprocess import find_greedy_credible_levels
+from ligo.skymap import distance
 
-from synphot import ConstFlux1D, SourceSpectrum, exceptions as syn_ex
+from scipy import stats
+
+from synphot import ConstFlux1D, SourceSpectrum, SpectralElement, exceptions as syn_ex
 from m4opt.missions import ultrasat
-from m4opt.models import observing
+from m4opt.synphot import observing, DustExtinction, TabularScaleFactor, observing
+
 
 # Configure logging
 logging.basicConfig(
@@ -77,6 +79,29 @@ def estimate_apparent_ABmag(distmean, M_AB=-14.5) -> float:
     return m_AB
 
 
+def gaussian_mag(skymap_moc, absmag_mean, absmag_stdev, nside=128):
+
+    hpx = HEALPix(nside, frame=ICRS(), order="nested")
+    skymap_flat = rasterize(skymap_moc, hpx.level)
+    distmean, diststd, _ = distance.parameters_to_moments(
+        skymap_flat["DISTMU"],
+        skymap_flat["DISTSIGMA"],
+    )
+
+    logdist_sigma2 = np.log1p(np.square(diststd / distmean))
+    logdist_sigma = np.sqrt(logdist_sigma2)
+    logdist_mu = np.log(distmean) - 0.5 * logdist_sigma2
+    a = 5 / np.log(10)
+    appmag_mu = absmag_mean + a * logdist_mu + 25
+    appmag_sigma = np.sqrt(np.square(absmag_stdev) + np.square(a * logdist_sigma))
+    quantiles = np.linspace(0.05, 0.95, 5)
+    appmag_quantiles = stats.norm(
+        loc=appmag_mu[:, np.newaxis], scale=appmag_sigma[:, np.newaxis]
+    ).ppf(quantiles)
+
+    return appmag_quantiles
+
+
 def get_pixel_texp(ipix, nside, obstime, m_obs, band, snr=10.0) -> list:
     """
     Calculate the required exposure time for a specific HEALPix pixel to reach SNR of 10.
@@ -91,14 +116,17 @@ def get_pixel_texp(ipix, nside, obstime, m_obs, band, snr=10.0) -> list:
 
     Returns:
         list: [ipix, required exposure time in seconds].
+
     """
+
     try:
         # Get pixel sky coordinates
         theta, phi = hp.pix2ang(nside, ipix, nest=True)
         ra = np.rad2deg(phi)
         dec = np.rad2deg(0.5 * np.pi - theta)
         sky_coord = SkyCoord(ICRS(ra=ra * u.deg, dec=dec * u.deg), obstime=obstime)
-        observer_location = EarthLocation(0 * u.m, 0 * u.m, 0 * u.m)
+        # observer_location = EarthLocation(0 * u.m, 0 * u.m, 0 * u.m)
+        observer_location = ultrasat.orbit(obstime).earth_location
 
         # Calculate exposure time
         with observing(
@@ -106,27 +134,48 @@ def get_pixel_texp(ipix, nside, obstime, m_obs, band, snr=10.0) -> list:
             target_coord=sky_coord,
             obstime=obstime,
         ):
+
+            # if band.upper() in ultrasat.detector.bandpasses.keys():
+            #     texp = ultrasat.detector.get_exptime(
+            #         snr = snr,
+            #         source_spectrum = SourceSpectrum(ConstFlux1D(0 * u.ABmag))
+            #         * SpectralElement(
+            #             TabularScaleFactor(
+            #                 (
+            #                     appmag_quantiles * u.mag(u.dimensionless_unscaled)
+            #                 ).to_value(u.dimensionless_unscaled)
+            #             )
+            #         ) * DustExtinction(),
+            #             bandpass = band.upper()
+            #         ).to_value(u.s)
+
             if band.upper() in ultrasat.detector.bandpasses.keys():
-                texp = ultrasat.detector.get_exptime(
+                exptime_pixel_s = ultrasat.detector.get_exptime(
                     snr=snr,
-                    source_spectrum=SourceSpectrum(
-                        ConstFlux1D, amplitude=m_obs * u.ABmag
-                    ),
+                    source_spectrum=SourceSpectrum(ConstFlux1D(m_obs * u.ABmag))
+                    * DustExtinction(),
                     bandpass=band.upper(),
-                ).value
+                ).to_value(u.s)
+
+            # if band.upper() in ultrasat.detector.bandpasses.keys():
+            #   texp = ultrasat.detector.get_exptime(
+            #      snr = snr,
+            #     source_spectrum = SourceSpectrum(ConstFlux1D, amplitude=m_obs * u.ABmag),
+            #    bandpass = band.upper()
+            # ).value
             else:
                 logging.error(
                     f"Unsupported band requested: {band}. Available bands are: {ultrasat.detector.bandpasses.keys()}"
                 )
 
-        return [ipix, texp]
+        return [ipix, exptime_pixel_s]
     except Exception as e:
         logging.warning(f"Error calculating exposure for pixel {ipix}: {e}")
         return None
 
 
 def get_max_texp(
-    credible_levels, nside, start_time, m_obs, band, snr, verbose=True
+    credible_levels, nside, obstime, m_obs, band, snr, verbose=True
 ) -> float:
     """
     Calculate the maximum exposure time across the 90% credible region of a GW localization map.
@@ -134,7 +183,7 @@ def get_max_texp(
     Args:
         credible_levels (np.ndarray): Credible levels for each pixel.
         nside (int): HEALPix Nside parameter.
-        start_time (Time): Observation start time.
+        obstime (Time): Observation start time.
         m_obs (float): Apparent AB magnitude of the source.
         band (str): Observation band ('nuv' or 'fuv').
         verbose (bool, optional): If True, print additional information. Defaults to True.
@@ -152,8 +201,7 @@ def get_max_texp(
         for ipix, cl in enumerate(credible_levels):
             if cl <= 0.9:
                 print("ipix :", ipix)
-                pix_texp = get_pixel_texp(ipix, nside, start_time, m_obs, band, snr)
-                print(pix_texp)
+                pix_texp = get_pixel_texp(ipix, nside, obstime, m_obs, band, snr)
                 if pix_texp is None:
                     count += 1
                     continue
@@ -164,6 +212,8 @@ def get_max_texp(
             return None
 
         max_texp = np.max(texp_list)
+
+        print("max tex:", max_texp)
 
         if verbose:
             logging.info(f"Failed pixel calculations: {count}")
@@ -184,10 +234,12 @@ def max_texp_by_sky_loc(
     batch_file,
     band,
     source_mag,
+    absmag_stdev,
     dist_measure,
     max_area,
     snr,
     max_texp=7200,
+    delay="6 hr",
 ) -> None:
     """
     Main function to determine max exposure times and filter events.
@@ -230,16 +282,12 @@ def max_texp_by_sky_loc(
             return
 
         ids = events_filtered["simulation_id"]
-        mags = estimate_apparent_ABmag(
-            events_filtered[distance_column], M_AB=source_mag
-        )
-        events_texp = pd.DataFrame(
-            {
-                "event_id": ids,
-                "apparent AB mag": mags,
-                "area(90)": events_filtered["area(90)"],
-            }
-        )
+        # mags = estimate_apparent_ABmag(events_filtered[distance_column], M_AB=source_mag)
+        # events_texp = pd.DataFrame({
+        #    'event_id': ids,
+        #    'apparent AB mag': mags,
+        #    'area(90)': events_filtered['area(90)']
+        # })
 
         nside = 64
         nside_hires = nside * 4
@@ -269,22 +317,44 @@ def max_texp_by_sky_loc(
             fitsfile = fitsfile[0]
 
             # Read sky map and rasterize
-            start_time = Time(fits.getval(fitsfile, "DATE-OBS", ext=1))
+            skymap_moc = read_sky_map(fitsfile, moc=True)
+
+            # event_time  = Time(fits.getval(fitsfile, 'DATE-OBS', ext=1))
+            event_time = Time(
+                Time(skymap_moc.meta["gps_time"], format="gps").utc, format="iso"
+            )
+            obstime = event_time + u.Quantity(delay)
+
             skymap_base = read_sky_map(fitsfile, moc=True)["UNIQ", "PROBDENSITY"]
             skymap = rasterize(skymap_base, healpix.level)["PROB"]
             credible_levels = find_greedy_credible_levels(skymap)
+
+            # mags = estimate_apparent_ABmag(events_filtered[distance_column], M_AB=source_mag)
+            distmod = Distance(skymap_moc.meta["distmean"] * u.Mpc).distmod
+            mags = (source_mag * u.ABmag + distmod).value
+
+            events_texp = pd.DataFrame(
+                {
+                    "event_id": ids,
+                    "apparent AB mag": mags,
+                    "area(90)": events_filtered["area(90)"],
+                }
+            )
 
             m_obs = events_texp["apparent AB mag"][
                 events_texp["event_id"] == int(file_id)
             ].to_numpy()[0]
 
             print("m_obs :", m_obs)
-            print("start_time :", start_time)
+            print("obstime :", obstime)
+
+            # Gaussian mag quantile
+            # m_obs = gaussian_mag(skymap_moc=skymap_moc, absmag_mean=source_mag, absmag_stdev=absmag_stdev, nside=nside)
 
             try:
 
                 texp_max = get_max_texp(
-                    credible_levels, nside, start_time, m_obs, band, snr, verbose=False
+                    credible_levels, nside, obstime, m_obs, band, snr, verbose=False
                 )
                 if texp_max is None:
                     logging.info(
@@ -293,13 +363,7 @@ def max_texp_by_sky_loc(
                     skymap_hires = rasterize(skymap_base, healpix_hires.level)["PROB"]
                     cls_hires = find_greedy_credible_levels(skymap_hires)
                     texp_max = get_max_texp(
-                        cls_hires,
-                        nside_hires,
-                        start_time,
-                        m_obs,
-                        band,
-                        snr,
-                        verbose=False,
+                        cls_hires, nside_hires, obstime, m_obs, band, snr, verbose=False
                     )
                     if texp_max is None:
                         logging.warning(
@@ -367,10 +431,14 @@ def main():
         out_dir = config.get("params", "save_directory")
         band = config.get("params", "band")
         source_mag = config.getfloat("params", "KNe_mag_AB")
+        absmag_stdev = config.getfloat("params", "absmag_stdev")
         dist_measure = config.get("params", "distance_measure")
-        max_texp = config.getfloat("params", "max_texp", fallback=7200)
+        max_texp = config.getfloat("params", "max_texp", fallback=720)
         max_area = config.getfloat("params", "max_area", fallback=200)
         snr = config.getfloat("params", "snr")
+        delay = config.get("params", "delay")
+        print("max_area :", max_area)
+        print("max exposure time :", max_texp)
         logging.info("Configuration parameters loaded successfully.")
     except (configparser.NoSectionError, configparser.NoOptionError, ValueError) as e:
         logging.error(f"Error reading configuration: {e}")
@@ -378,6 +446,9 @@ def main():
 
     allsky_dir = os.path.join(obs_scenario_dir, "allsky")
     texp_out_dir = os.path.join(out_dir, "texp_out")
+
+    if absmag_stdev == "None":
+        absmag_stdev = None
 
     # Create output directory if it doesn't exist
     os.makedirs(texp_out_dir, exist_ok=True)
@@ -389,10 +460,12 @@ def main():
         batch_file=args.batch_file,
         band=band,
         source_mag=source_mag,
+        absmag_stdev=absmag_stdev,
         dist_measure=dist_measure,
         max_area=max_area,
         snr=snr,
         max_texp=max_texp,
+        delay=delay,
     )
 
 

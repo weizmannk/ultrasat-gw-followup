@@ -4,7 +4,7 @@
 
 # Usage:
 #     python3 run_workflow_1.py --params /path/to/params.ini [--log_dir /path/to/logs]
-# eg: python3 run_workflow_1.py  --params /home/weizmann.kiendrebeogo/M4OPT-ULTRSASAT/ultrasat-gw-followup/params.ini
+# eg: python3 run_workflow_1.py  --params ./params.ini
 # """
 
 import os
@@ -28,6 +28,7 @@ def setup_logging(log_dir):
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
+        force=True,
     )
 
 
@@ -44,10 +45,7 @@ def run_localization_script(params_file, followup_dir):
 
     try:
         result = subprocess.run(
-            ["python3", localization_script, params_file],
-            check=True,
-            text=True,
-            capture_output=True,
+            ["python3", localization_script, params_file], check=True, text=True
         )
         logging.info("Localization script completed successfully.")
         logging.debug(f"Localization script output: {result.stdout}")
@@ -230,7 +228,7 @@ def parse_arguments():
     parser.add_argument(
         "--log_dir",
         type=str,
-        default="./logs1",
+        default="./logs1_O5",
         help="Directory for log files (default: ./Logs1).",
     )
     return parser.parse_args()

@@ -1,176 +1,155 @@
-#!/usr/bin/env python
-# coding: utf-8
+#!/usr/bin/env python3
 
+"""
+---------------------------------------------------------------------------------------------------
+ABOUT THE SCRIPT
+---------------------------------------------------------------------------------------------------
+Author          : Ramodgwendé Weizmann KIENDREBEOGO
+Email           : kiend.weizman7@gmail.com / weizmann.kiendrebeogo@oca.eu
+Repository URL  : https://github.com/weizmannk/ultrasat-gw-followup.git
+Creation Date   : January 2024
+Description     : This Python script processes exposure time data from ULTRASAT follow-up simulations
+                  for an LVK observing run scenario. It performs the following steps:
 
-## usage: texp_cut_and_batch.py [/path/to/input/directory/with/texp/files/] [/path/to/output/directory/] [number of input batches] [number of export batches] [band]
+                  1. Loads and aggregates exposure time results from multiple batch files.
+                  2. Ensures that all exposure times meet a minimum threshold (`min_texp`).
+                  3. Converts exposure times from seconds to kiloseconds (ks).
+                  4. Saves the processed data into a master output file (`allsky_sched_full.txt`).
+                  5. Splits the dataset into smaller batch files for scheduling.
 
-# import pandas as pd
-# import numpy as np
-# import os, sys, configparser
-# import argparse
+                  The script reads configuration parameters from an 'ini' file and automatically
+                  creates necessary output directories.
 
-# def texp_cut_and_batch(texp_dir,out_dir,N_in,N_out,band,min_texp):
-#     '''
-#     Function to:
-#         1. Load in and re-aggregate the results of a batched run of max-texp-by-sky-loc.py
-#         2. Ensure all exposure times are at least min_texp s.
-#         3. Rebatch and create files for use by the scheduler.
+Usage           : python texp_cut_and_batch.py /path/to/params.ini
 
-#     Arguments
-#     -----------------------
-#     texp_dir (str)   : /path/to/directory with downselected event csvs
-#     out_dir (str)    : /path/to/save/directory
-#     N_in (int)       : Number of input batches (as determined by max-texp-by-sky-loc.py)
-#     N_out (int)      : Number of output batches (for the scheduler)
-#     band (str)       : Which UV band is being considered ('nuv' or 'fuv'). Just used in this script to parse filenames.
-#     min_texp (float) : Minimum allowed exposure time in seconds. Exposure times <= min_texp will be set to this value.
-#     '''
+Parameters in INI File:
+    - save_directory  : Output directory where processed files will be stored.
+    - N_batch_preproc : Number of input batch files from `max-texp-by-sky-loc.py` (default: 1).
+    - N_batch_sched   : Number of output batch files for scheduling (default: `N_batch_preproc`).
+    - band            : UV band being considered (`nuv`).
+    - min_texp        : Minimum allowed exposure time in seconds.
 
-#     ## load downselected (< max_area sq. deg localization, < max_texp t_exp) events
-#     events = pd.read_csv(texp_dir+'allsky_texp_max_cut_'+band+'_batch0.txt',delimiter=' ')
-#     for i in range(1,N_in):
-#         next_batch = pd.read_csv(texp_dir+'allsky_texp_max_cut_'+band+'_batch'+str(i)+'.txt',delimiter=' ')
-#         events = pd.concat([events, next_batch], ignore_index=True)
+Output Files:
+    - allsky_sched_full.txt    : Processed exposure times for all events.
+    - texp_sched/allsky_sched_batch*.txt : Batched exposure time files for scheduling.
 
-#     ## liaise calculated t_exp to desired scheduler t_exp
-#     ## i.e., ensure minimum 500s exposures, convert s to ks, reformat for use by the scheduler
-#     texp_sched = events['texp_max (s)'].to_numpy(copy=True)
-#     for i, (t, ev_id) in enumerate(zip(texp_sched,events['event_id'].to_list())):
-#         if t <= min_texp:
-#             texp_sched[i] = min_texp
-#         else:
-#             continue
-#     texp_sched = texp_sched/1000
-#     events_texp = pd.DataFrame({'event_id':events['event_id'].tolist(),'t_exp (ks)':texp_sched})
+"""
 
-#     events_texp.to_csv(os.path.join(out_dir,'allsky_sched_full.txt'),index=False,sep=' ')
-
-#     ## batch
-#     batch_dir = os.path.join(out_dir,'texp_sched')
-#     os.makedirs(batch_dir, exist_ok=True) ## weizmann
-#     list_of_lists = np.array_split(events_texp,N_out)
-#     batchnums = range(len(list_of_lists))
-#     for lst, num in zip(list_of_lists,batchnums):
-#         filename = os.path.join(batch_dir,'allsky_sched_batch'+str(num)+'.txt')
-#         lst.to_csv(filename,index=False,sep=',')
-
-#     return
-
-
-# if __name__ == '__main__':
-
-#     ## set up argparser
-#     parser = argparse.ArgumentParser(description="Re-aggregate the output from max-texp-by-sky-loc.py and prepare it for passing to the UVEX scheduler.")
-#     parser.add_argument('params', type=str, help='/path/to/params_file.ini')
-
-#     args = parser.parse_args()
-
-#     ## set up configparser
-#     config = configparser.ConfigParser()
-#     config.read(args.params)
-
-#     ## get info from params file
-#     out_dir          = config.get("params","save_directory")
-#     N_in             = int(config.get("params","N_batch_preproc",fallback=1))
-#     N_out            = int(config.get("params","N_batch_sched",fallback=N_in))
-#     band             = config.get("params","band")
-#     min_texp         = float(config.get("params","min_texp"))
-
-#     texp_dir = out_dir+'/texp_out/'
-
-#     os.makedirs(texp_dir , exist_ok=True)  ## weizmann
-
-#     ## run the script
-#     texp_cut_and_batch(texp_dir,out_dir,N_in,N_out,band,min_texp)
-
-
+import logging
+import os
 import pandas as pd
 import numpy as np
-import os, sys, configparser
+import sys
+import configparser
 import argparse
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 def texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, band, min_texp):
     """
-    Function to:
-        1. Load in and re-aggregate the results of a batched run of max-texp-by-sky-loc.py
-        2. Ensure all exposure times are at least min_texp s.
-        3. Rebatch and create files for use by the scheduler.
+    Processes exposure time data from max-texp-by-sky-loc.py output and prepares batch files.
 
-    Arguments
+    Steps:
+        1. Load and aggregate event files from multiple batches.
+        2. Ensure all exposure times are at least `min_texp` seconds.
+        3. Convert exposure times from seconds to kiloseconds (ks).
+        4. Save the processed data and split it into batches for the scheduler.
+
+    Parameters:
     -----------------------
-    texp_dir (str)   : /path/to/directory with downselected event csvs
-    out_dir (str)    : /path/to/save/directory
-    N_in (int)       : Number of input batches (as determined by max-texp-by-sky-loc.py)
-    N_out (int)      : Number of output batches (for the scheduler)
-    band (str)       : Which UV band is being considered ('nuv' or 'fuv'). Just used in this script to parse filenames.
-    min_texp (float) : Minimum allowed exposure time in seconds. Exposure times <= min_texp will be set to this value.
+    texp_dir (str)   : Path to the directory containing input event files.
+    out_dir (str)    : Path to save output files.
+    N_in (int)       : Number of input batches (from max-texp-by-sky-loc.py).
+    N_out (int)      : Number of output batches (for the scheduler).
+    band (str)       : UV band ('nuv') used for parsing filenames.
+    min_texp (float) : Minimum exposure time in seconds. Any lower values will be set to this.
+
+    Returns:
+    -----------------------
+    None
     """
 
-    ## load downselected (< max_area sq. deg localization, < max_texp t_exp) events
-    events = pd.read_csv(
-        texp_dir + "allsky_texp_max_cut_" + band + "_batch0.txt", delimiter=" "
-    )
-    for i in range(1, N_in):
-        next_batch = pd.read_csv(
-            texp_dir + "allsky_texp_max_cut_" + band + "_batch" + str(i) + ".txt",
-            delimiter=" ",
-        )
-        events = pd.concat([events, next_batch], ignore_index=True)
+    all_batches = []
 
-    ## liaise calculated t_exp to desired scheduler t_exp
-    ## i.e., ensure minimum 500s exposures, convert s to ks, reformat for use by the scheduler
-    texp_sched = events["texp_max (s)"].to_numpy(copy=True)
-    for i, (t, ev_id) in enumerate(zip(texp_sched, events["event_id"].to_list())):
-        if t <= min_texp:
-            texp_sched[i] = min_texp
-        else:
+    # Load and concatenate all batch files
+    for i in range(N_in):
+        batch_file = os.path.join(texp_dir, f"allsky_texp_max_cut_{band}_batch{i}.txt")
+
+        if not os.path.exists(batch_file):
+            logging.warning(f"File {batch_file} not found. Skipping.")
             continue
-    texp_sched = texp_sched / 1000
-    events_texp = pd.DataFrame(
-        {"event_id": events["event_id"].tolist(), "t_exp (ks)": texp_sched}
+
+        batch_data = pd.read_csv(batch_file, delimiter=" ")
+        all_batches.append(batch_data)
+
+    if not all_batches:
+        logging.error("No valid batch files found. Exiting.")
+        sys.exit(1)
+
+    # Remove empty DataFrames before concatenation
+    all_batches = [df for df in all_batches if not df.empty]
+
+    # Merge all batch data
+    events = pd.concat(all_batches, ignore_index=True)
+
+    # Ensure minimum exposure time and convert to kiloseconds (ks)
+    events["t_exp (ks)"] = (
+        np.where(events["texp_max (s)"] <= min_texp, min_texp, events["texp_max (s)"])
+        / 1000
     )
 
-    events_texp.to_csv(
-        os.path.join(out_dir, "allsky_sched_full.txt"), index=False, sep=" "
-    )
+    # Save processed data
+    full_output_path = os.path.join(out_dir, "allsky_sched_full.txt")
+    events[["event_id", "t_exp (ks)"]].to_csv(full_output_path, index=False, sep=" ")
+    logging.info(f"Processed data saved to: {full_output_path}")
 
-    ## batch
+    # Create output directory for batch files
     batch_dir = os.path.join(out_dir, "texp_sched")
-    os.makedirs(batch_dir, exist_ok=True)  ## weizmann
-    list_of_lists = np.array_split(events_texp, N_out)
-    batchnums = range(len(list_of_lists))
-    for lst, num in zip(list_of_lists, batchnums):
-        filename = os.path.join(batch_dir, "allsky_sched_batch" + str(num) + ".txt")
-        lst.to_csv(filename, index=False, sep=",")
+    os.makedirs(batch_dir, exist_ok=True)
 
-    return
+    # Split dataset into batches
+    list_of_batches = np.array_split(events[["event_id", "t_exp (ks)"]], N_out)
+
+    for i, batch in enumerate(list_of_batches):
+        batch_file = os.path.join(batch_dir, f"allsky_sched_batch{i}.txt")
+        batch.to_csv(batch_file, index=False, sep=",")
+        logging.info(f"Batch file created: {batch_file}")
+
+    logging.info("Batching process completed successfully.")
 
 
 if __name__ == "__main__":
-
-    ## set up argparser
     parser = argparse.ArgumentParser(
-        description="Re-aggregate the output from max-texp-by-sky-loc.py and prepare it for passing to the UVEX scheduler."
+        description="Process exposure time data and prepare it for ULTRASAT scheduling."
     )
-    parser.add_argument("params", type=str, help="/path/to/params_file.ini")
-
+    parser.add_argument(
+        "params",
+        type=str,
+        help="Path to the parameters file (e.g., /path/to/params_file.ini)",
+    )
     args = parser.parse_args()
 
-    ## set up configparser
+    # Load configuration
     config = configparser.ConfigParser()
     config.read(args.params)
 
-    ## get info from params file
-    out_dir = config.get("params", "save_directory")
-    N_in = int(config.get("params", "N_batch_preproc", fallback=1))
-    N_out = int(config.get("params", "N_batch_sched", fallback=N_in))
-    band = config.get("params", "band")
-    min_texp = float(config.get("params", "min_texp"))
+    try:
+        out_dir = config.get("params", "save_directory")
+        N_in = config.getint("params", "N_batch_preproc", fallback=1)
+        N_out = config.getint("params", "N_batch_sched", fallback=N_in)
+        band = config.get("params", "band")
+        min_texp = config.getfloat("params", "min_texp")
+    except (configparser.NoSectionError, configparser.NoOptionError, ValueError) as e:
+        logging.error(f"Error reading configuration: {e}")
+        sys.exit(1)
 
-    texp_dir = out_dir + "/texp_out/"
+    # Define directory for input files
+    texp_dir = os.path.join(out_dir, "texp_out")
+    os.makedirs(texp_dir, exist_ok=True)
 
-    os.makedirs(texp_dir, exist_ok=True)  ## weizmann
-
-    ## run the script
+    # Run processing function
     texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, band, min_texp)

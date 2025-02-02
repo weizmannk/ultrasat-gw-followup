@@ -49,7 +49,7 @@ def run_texp_cut_and_batch(params_file, followup_dir):
     texp_script = os.path.join(followup_dir, "texp_cut_and_batch.py")
 
     if not os.path.exists(texp_script):
-        logging.error(f"texp_cut_and_batch.py script not found: {texp_script}")
+        logging.error(f"texp_max_cut_and_batch.py script not found: {texp_script}")
         sys.exit(1)
 
     try:
@@ -68,7 +68,7 @@ def run_texp_cut_and_batch(params_file, followup_dir):
 
 
 def create_condor_submission_file_for_scheduler(
-    batch_file_path, log_dir, sched_dir, skymap_dir, params
+    batch_file_path, log_dir, sched_dir, skymap_dir, prog_dir, params
 ):
     """
     Creates and submits an HTCondor job for each batch file to process ULTRASAT ToO schedules.
@@ -101,16 +101,22 @@ def create_condor_submission_file_for_scheduler(
 
     # read params
     mission = params["mission"]
+    absmag_mean = params["KNe_mag_AB"]
+    absmag_stdev = params["absmag_stdev"]
+    snr = params["snr"]
     deadline = params["deadline"]
     delay = params["delay"]
-    job = params["job"]
+    exptime_min = params["min_texp"]
+    bandpass = params["band"].upper()
     nside = params["nside"]
+    job = params["job"]
 
     # Loop through rows and process each event_id and t_exp as required
     for _, row in df.iterrows():
         try:
             event_id = int(row["event_id"])
-            texp = row["t_exp (ks)"]
+            # convert the expousre time max in seconds
+            texp = row["t_exp (ks)"]  # * 1000
         except (KeyError, ValueError) as e:
             logging.error(f"Invalid data in batch file {batch_file_path}: {e}")
             continue
@@ -120,6 +126,7 @@ def create_condor_submission_file_for_scheduler(
 
         skymap_file = os.path.join(skymap_dir, f"{event_id}.fits")
         sched_file = os.path.join(sched_dir, f"{event_id}.ecsv")
+        prog_file = os.path.join(prog_dir, f"PROGRESS_{event_id}.ecsv")
         wrapper_script = os.path.join(log_dir, f"wrapper_{event_id}.sh")
 
         wrapper_content = (
@@ -129,11 +136,17 @@ def create_condor_submission_file_for_scheduler(
             f"{skymap_file} "
             f"{sched_file} "
             f"--mission={mission} "
-            f"--exptime='{texp} ks' "
-            f"--nside={nside} "
+            f"--bandpass={bandpass} "
+            f"--absmag-mean={absmag_mean} "
+            f"--absmag-stdev={absmag_stdev} "
+            f"--exptime-min='{exptime_min} s' "
+            f"--exptime-max='{texp} ks' "
+            f"--snr={snr} "
             f"--delay='{delay}' "
             f"--deadline='{deadline}' "
             f"--timelimit='20min' "
+            f"--nside={nside} "
+            f"--record-progress {prog_file} "
             f"--jobs {job} "
         )
 
@@ -159,8 +172,8 @@ def create_condor_submission_file_for_scheduler(
             error = {log_dir}/$(Cluster)_$(Process).err
             log = {log_dir}/$(Cluster)_$(Process).log
             JobBatchName = ULTRASAT_Workflow_{batch_filename}
-            request_memory = 60000 MB
-            request_disk   = 11000 MB
+            request_memory = 50000 MB
+            request_disk   = 8000 MB
             request_cpus   = 1
             on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
             on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
@@ -199,7 +212,7 @@ def create_condor_submission_file_for_scheduler(
             )
 
 
-def process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, params):
+def process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, prog_dir, params):
     """
     Process all batch files in the specified directory and submit them to HTCondor.
 
@@ -233,6 +246,7 @@ def process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, params):
             log_dir,
             sched_dir,
             skymap_dir,
+            prog_dir,
             params,
         )
 
@@ -248,6 +262,7 @@ def create_directories(outdir, additional_dirs=None):
     directories = [
         outdir,
         os.path.join(outdir, "schedules"),
+        os.path.join(outdir, "progress"),
         os.path.join(outdir, "texp_out"),
         os.path.join(outdir, "texp_sched"),
     ]
@@ -281,17 +296,15 @@ def read_params_file(params_file):
         params = {
             "obs_scenario_dir": config.get("params", "obs_scenario"),
             "save_directory": config.get("params", "save_directory"),
-            # 'band': config.get("params", "band"),
-            # 'KNe_mag_AB': config.getfloat("params", "KNe_mag_AB"),
-            # 'distance_measure': config.get("params", "distance_measure"),
-            # 'max_texp': config.getfloat("params", "max_texp"),
+            "KNe_mag_AB": config.getfloat("params", "KNe_mag_AB"),
+            "absmag_stdev": config.getfloat("params", "absmag_stdev"),
+            "snr": config.get("params", "snr"),
             "deadline": config.get("params", "deadline"),
             "mission": config.get("params", "mission"),
-            "nside": config.get("params", "nside"),
-            # 'skygrid_step' : config.get("params", "skygrid_step"),
-            # 'skygrid_method' : config.get("params", "skygrid_method"),
             "delay": config.get("params", "delay"),
-            # 'roll_step' : config.get("params", "roll_step"),
+            "min_texp": config.get("params", "min_texp"),
+            "band": config.get("params", "band"),
+            "nside": config.get("params", "nside"),
             "job": config.get("params", "job"),
         }
 
@@ -318,7 +331,7 @@ def parse_arguments():
     parser.add_argument(
         "--log_dir",
         type=str,
-        default="./logs2",
+        default="./logs2_O5",
         help="Directory for log files (default: ./Logs2).",
     )
     return parser.parse_args()
@@ -355,6 +368,7 @@ def main():
 
     # Define paths
     sched_dir = os.path.join(outdir, "schedules")
+    prog_dir = os.path.join(outdir, "progress")
     skymap_dir = os.path.join(obs_scenario_dir, "allsky")
 
     # Ensure schedules directory exists
@@ -370,7 +384,7 @@ def main():
     batches_dir = os.path.join(outdir, "texp_sched")
 
     # Submit Condor jobs for each batch file
-    process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, params)
+    process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, prog_dir, params)
 
     logging.info("All batch files processed and submitted as Condor jobs.")
 

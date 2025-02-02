@@ -189,7 +189,7 @@ def get_plots_and_stats(
     run_duration,
     max_texp,
     max_area,
-    coverage_threshold=99,
+    coverage_threshold=90,
 ):
     """
     Function to compute follow-up statistics and make relevant plots.
@@ -213,7 +213,7 @@ def get_plots_and_stats(
     sim_rate (float)            : Simulated event rate in yr^-1 Gpc^-3. See note above.
     run_duration (float)        : Duration of the observing run to be simulated, in years.
     max_texp (float)            : Maximum allowed per-field exposure time.
-    coverage_threshold (float)  : Percent coverage of the GW 90% credible localization required to select an event as a ToO trigger. Default 99.
+    coverage_threshold (float)  : Percent coverage of the GW 90% credible localization required to select an event as a ToO trigger. Default 90.
 
     """
     ## note that this varies from simulation to simulation
@@ -491,13 +491,13 @@ def get_plots_and_stats(
         ## tiling statistics
         obs_tile_list = events_sched[
             [(ev_id in obs_id_list) for ev_id in events_sched["event_id"]]
-        ]["tiles_to_99pct"].to_list()
+        ]["tiles_to_90pct"].to_list()
         obs_tile_arr = np.array(obs_tile_list)
         median_tile_sel = np.median(obs_tile_arr)
         min_tile_sel = np.min(obs_tile_arr)
         max_tile_sel = np.max(obs_tile_arr)
         print(
-            "Tiling statistics for selected events (tiles to 99% coverage of 90% localization):",
+            "Tiling statistics for selected events (tiles to 90% coverage of 90% localization):",
             file=outfile,
         )
         print(
@@ -687,7 +687,7 @@ if __name__ == "__main__":
     sim_rate = float(config.get("params", "sim_bns_rate"))
     run_duration = float(config.get("params", "obs_duration"))
     max_texp = float(config.get("params", "max_texp"))
-    coverage_threshold = float(config.get("params", "coverage_threshold", fallback=99))
+    coverage_threshold = float(config.get("params", "coverage_threshold", fallback=90))
     max_area = float(config.get("params", "max_area"))
 
     # Define paths
