@@ -14,9 +14,9 @@ Follow the installation instructions:
 [M4OPT Documentation](doc/index.md)
 
 ---
-# Download the Observing Scenarios for O5 and O6
+## Download the Observing Scenarios for O5 and O6
 
-## [Observing Scenario Data](https://github.com/lpsinger/observing-scenarios-simulations)
+###**[Observing Scenario Data](https://github.com/lpsinger/observing-scenarios-simulations)**
 
 - **Observing scenarios run O5 and O6 using an SNR threshold of 10:**
   [Zenodo Record](https://zenodo.org/records/14585837)
