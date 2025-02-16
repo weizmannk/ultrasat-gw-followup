@@ -5,18 +5,27 @@
 This pipeline automates the scheduling and follow-up of **gravitational wave (GW) events** using the **ULTRASAT** mission. It processes GW localization maps, filters viable events, determines optimal exposure times, and submits observation jobs via **HTCondor**.
 
 ---
-
 ## Installation
 
 ### Installing M4OPT
-M4OPT is use for **mission optimization and scheduling**.  
+M4OPT is use for **mission optimization and scheduling**.
 Follow the installation instructions:
 
 [M4OPT Documentation](doc/index.md)
 
+---
+# Download the Observing Scenarios for O5 and O6
+
+## [Observing Scenario Data](https://github.com/lpsinger/observing-scenarios-simulations)
+
+- **Observing scenarios run O5 and O6 using an SNR threshold of 10:**
+  [Zenodo Record](https://zenodo.org/records/14585837)
+
+- **Paper on the observing scenarios data:**
+  Kiendrebeogo et al. (2023)
+  DOI: [10.3847/1538-4357/acfcb1](https://iopscience.iop.org/article/10.3847/1538-4357/acfcb1)
 
 ---
-
 ## ULTRASAT Workflow Execution
 
 The pipeline consists of three main workflow execution scripts, each responsible for a specific stage of the ULTRASAT GW follow-up process.
@@ -41,7 +50,7 @@ This script (`run_workflow_1.py`) automates the first stage of the ULTRASAT work
 ```
 python3 run_workflow_1.py --params /path/to/params_file.ini
 ```
-
+---
 ### **2. Observation Scheduling and Job Submission**
 This script (`run_workflow_2.py`) automates the second stage of the ULTRASAT workflow, focusing on scheduling observations for selected gravitational wave events.
 
@@ -65,6 +74,7 @@ This script (`run_workflow_2.py`) automates the second stage of the ULTRASAT wor
 python3 run_workflow_2.py --params /path/to/params_file.ini
 ```
 
+---
 ### **3. Follow-up Coverage and Visualization**
 This script (`run_workflow_3.py`) automates the third stage of the ULTRASAT workflow, focusing on computing follow-up coverage for gravitational wave events and generating visualizations.
 
@@ -83,5 +93,5 @@ This script (`run_workflow_3.py`) automates the third stage of the ULTRASAT work
 
 #### **Command:**
 ```
-python3 run_workflow_3.py --params /path/to/params_file.ini 
+python3 run_workflow_3.py --params /path/to/params_file.ini
 ```
