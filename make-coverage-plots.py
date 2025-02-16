@@ -3,6 +3,8 @@
 
 ## This script contains some code to make various plots for the UVEX ToO follow-up of LVK observing scenarios, plus get some basic statistics of interest.
 
+# python3 make-coverage-plots.py /path/to/params.ini
+
 from pathlib import Path
 from astropy.table import Table, join
 from astropy import units as u
@@ -16,6 +18,7 @@ import os, sys, configparser
 import argparse
 import scipy.stats as st
 from scipy import special, integrate, optimize
+import json
 
 
 def get_trigger_quote(
@@ -110,10 +113,10 @@ def get_s2a_with_err(
 
     Arguments
     -----------
-    astro_rate_med (float) : The median astrophysical rate in yr^-1 Mpc^-3
+    astro_rate_med (float) : The median astrophysical rate in yr^-1 Gpc^-3
     astro_rate_low (float) : The lower 90% C.I. for the astrophysical rate
-    astro_rate_high (float) : The upper 90% C.I. for the astrophysical rate
-    sim_rate (float) : The simulated rate in yr^-1 Gpc^-3 (NOTE: given in yr^-1 Mpc^-3 by Petrov et al, need to convert first!)
+    astro_rate_high (float): The upper 90% C.I. for the astrophysical rate
+    sim_rate (float) : The simulated rate in yr^-1 Gpc^-3 (NOTE: given in yr^-1 Mpc^-3 by kiendrebeogo et al.2023, need to convert first!)
     duration (float) : Observation duration in years
 
     Returns
@@ -180,15 +183,17 @@ def get_plots_and_stats(
     allsky_file,
     coverage_file,
     coverage_plots_dir,
+    statistics_dir,
     outdir,
     N_batch,
-    band,
-    mag_AB,
+    bandpass,
+    absmag_mean,
     astro_rate,
     sim_rate,
     run_duration,
     max_texp,
     max_area,
+    fov,
     coverage_threshold=90,
 ):
     """
@@ -204,11 +209,11 @@ def get_plots_and_stats(
     Arguments
     --------------------------------
     allsky_file (str) : /path/to/allsky.dat
-    coverage_file (str) : /path/to/coverage_file.txt (as produced by compute_tiling.py)
+    coverage_file (str) : /path/to/coverage_file.csv (as produced by compute_tiling.py)
     outdir (str)        : /path/to/save/directory/
     N_batch (int)       : Number of batches used for preprocessing.
-    band (str)          : UV band being considered.
-    mag_AB (float)      : Assumed kilonova absolute bolometric magnitude.
+    bandpass (str)          : UV band being considered.
+    absmag_mean (float)      : Assumed kilonova absolute bolometric magnitude.
     astro_rate (list of floats) : Astrophysical rate estimate to use. Must be given as [median, lower bound, upper bound] in yr^-1 Gpc^-3.
     sim_rate (float)            : Simulated event rate in yr^-1 Gpc^-3. See note above.
     run_duration (float)        : Duration of the observing run to be simulated, in years.
@@ -227,109 +232,86 @@ def get_plots_and_stats(
     )
 
     ## load events
-    events_all = pd.read_csv(allsky_file, delimiter="\t", skiprows=1)
-    events_sched = pd.read_csv(coverage_file, delimiter=" ")
+    events_all = pd.read_csv(allsky_file)
+    events_sched = pd.read_csv(coverage_file)
 
     ## filter to events that are well-covered and account for sun exclusion
     ## improvement point: could actually query where the sun is at observation time, define exclusion radius, and check for overlap with localization region.
     ## This could be a fun project for someone!
-    obs_id_list = events_sched[events_sched["percent_coverage"] >= coverage_threshold][
-        "event_id"
+    # Extract event IDs and scheduled exposure times for events meeting the coverage threshold
+    obs_id_list = events_sched.loc[
+        events_sched["percent_coverage"] >= coverage_threshold, "event_id"
     ].to_list()
-    obs_texp_list = events_sched[
-        events_sched["percent_coverage"] >= coverage_threshold
-    ]["texp_sched (ks)"].to_list()
+    obs_texp_list = events_sched.loc[
+        events_sched["percent_coverage"] >= coverage_threshold, "texp_sched (ks)"
+    ].to_list()
 
-    events_lowcov = events_all[
-        [
-            (
-                ev_id
-                in events_sched[events_sched["percent_coverage"].to_numpy() < 5][
-                    "event_id"
-                ].to_list()
-            )
-            for ev_id in events_all["simulation_id"].to_list()
-        ]
-    ]
+    # Identify events with less than 5% coverage
+    low_coverage_ids = events_sched.loc[
+        events_sched["percent_coverage"] < 5, "event_id"
+    ].to_list()
 
+    # Select events from events_all that have low coverage
+    events_lowcov = events_all[events_all["simulation_id"].isin(low_coverage_ids)]
+
+    # Filter events that are outside the Field of Regard (FoR)
     outside_FoR_id_list = events_lowcov[
-        (events_lowcov["area(90)"].to_numpy() < max_area)
-        & (events_lowcov["distmean"].to_numpy() < 300)
+        (events_lowcov["area(90)"] < max_area) & (events_lowcov["distmean"] < 300)
     ]["simulation_id"].to_list()
 
     events_texp = pd.read_csv(
-        outdir + "/texp_out/" + "allsky_texp_max_" + band + "_batch0.txt", delimiter=" "
+        f"{outdir}/texp_out/allsky_texp_max_{bandpass}_batch0.csv"
     )
-    for i in range(1, N_batch):
-        next_batch = pd.read_csv(
-            outdir
-            + "/texp_out/"
-            + "allsky_texp_max_"
-            + band
-            + "_batch"
-            + str(i)
-            + ".txt",
-            delimiter=" ",
-        )
-        events_texp = pd.concat([events_texp, next_batch], ignore_index=True)
-    texp_cut_id_list = events_texp[events_texp["texp_max (s)"] > max_texp][
-        "event_id"
-    ].to_list()
-    events_texp_reject = events_all[
-        [(sid in texp_cut_id_list) for sid in events_all["simulation_id"]]
-    ]
-    events_texp_reject_id_list = events_texp_reject["simulation_id"].to_list()
+    if N_batch > 1:
+        for i in range(1, N_batch):
+            next_batch = pd.read_csv(
+                f"{outdir}/texp_out/allsky_texp_max_{bandpass}_batch{i}.csv"
+            )
+            events_texp = pd.concat([events_texp, next_batch], ignore_index=True)
+
+    texp_cut_id_list = events_texp.loc[
+        events_texp["texp_max (s)"] > max_texp, "event_id"
+    ].tolist()
+    events_texp_reject = events_all[events_all["simulation_id"].isin(texp_cut_id_list)]
+    events_texp_reject_id_list = events_texp_reject["simulation_id"].tolist()
 
     ## anything, regardless of other factors, that gets <1% coverage gets marked with black x
     ## mark out # of tiles = 0 FoR
     ## texp long and rejected gets marked with grey x
     ## three rejection categories: completely excluded, partially excluded, can't be tiled under time constraints
-    events_notcov = events_all[
-        [
-            (
-                ev_id
-                in events_sched[
-                    events_sched["percent_coverage"].to_numpy() < coverage_threshold
-                ]["event_id"].to_list()
-            )
-            for ev_id in events_all["simulation_id"].to_list()
-        ]
+
+    # Identify events that are not fully covered (coverage < coverage_threshold)
+    not_covered_event_ids = events_sched.loc[
+        events_sched["percent_coverage"] < coverage_threshold, "event_id"
+    ]
+    events_notcov = events_all[events_all["simulation_id"].isin(not_covered_event_ids)]
+
+    # Identify zero events with coverage < 0%
+    zero_coverage_event_ids = events_sched.loc[
+        events_sched["percent_coverage"] < 0.01, "event_id"
     ]
     events_0cov = events_notcov[
-        [
-            (
-                ev_id
-                in events_sched[events_sched["percent_coverage"].to_numpy() < 0.01][
-                    "event_id"
-                ].to_list()
-            )
-            for ev_id in events_notcov["simulation_id"].to_list()
-        ]
+        events_notcov["simulation_id"].isin(zero_coverage_event_ids)
     ]
-    events_0cov_id_list = events_0cov["simulation_id"].to_list()
+    events_0cov_id_list = events_0cov["simulation_id"].tolist()
+
+    # Identify events with partial coverage (≥ 0% but < coverage_threshold)
+    semi_covered_event_ids = events_sched.loc[
+        events_sched["percent_coverage"] >= 0.01, "event_id"
+    ]
     events_semicov = events_notcov[
-        [
-            (
-                ev_id
-                in events_sched[events_sched["percent_coverage"].to_numpy() >= 0.01][
-                    "event_id"
-                ].to_list()
-            )
-            for ev_id in events_notcov["simulation_id"].to_list()
-        ]
+        events_notcov["simulation_id"].isin(semi_covered_event_ids)
     ]
     events_semicov_sched = events_sched[
-        [
-            (ev_id in events_semicov["simulation_id"].to_list())
-            for ev_id in events_sched["event_id"].to_list()
-        ]
+        events_sched["event_id"].isin(events_semicov["simulation_id"])
     ]
 
+    ########
     ## see if event is in principle coverable under ideal circumstances
     coverable_filt = np.floor(
         (max_texp / 1e3) / events_semicov_sched["texp_sched (ks)"].to_numpy()
-    ) <= np.ceil(
-        events_semicov["area(90)"].to_numpy() / 10
+    ) >= np.ceil(
+        events_semicov["area(90)"].to_numpy() / fov
     )  # True if coverable in perfect world
     events_coverable = events_semicov[coverable_filt]
     events_coverable_id_list = events_coverable["simulation_id"].to_list()
@@ -338,31 +320,15 @@ def get_plots_and_stats(
 
     ## get which events in the full simulation are observed
     ## True if observed, False if not
-    obs_filter = [
-        (event_id in obs_id_list) for event_id in events_all["simulation_id"].to_list()
-    ]
-    # FoR_filter = [(event_id in outside_FoR_id_list) for event_id in events_all['simulation_id'].to_list()]
-    full_exclusion_filt = [
-        (event_id in events_0cov_id_list)
-        for event_id in events_all["simulation_id"].to_list()
-    ]
-    partial_exclusion_filt = [
-        (event_id in events_coverable_id_list)
-        for event_id in events_all["simulation_id"].to_list()
-    ]
-    time_exclusion_filt = [
-        (event_id in events_timex_id_list)
-        for event_id in events_all["simulation_id"].to_list()
-    ]
-    texp_reject_filt = [
-        (event_id in events_texp_reject_id_list)
-        for event_id in events_all["simulation_id"].to_list()
-    ]
+    obs_filter = events_all["simulation_id"].isin(obs_id_list)
+    full_exclusion_filt = events_all["simulation_id"].isin(events_0cov_id_list)
+    partial_exclusion_filt = events_all["simulation_id"].isin(events_coverable_id_list)
+    time_exclusion_filt = events_all["simulation_id"].isin(events_timex_id_list)
+    texp_reject_filt = events_all["simulation_id"].isin(events_texp_reject_id_list)
+
+    # Combine filters
     combined_filter = (
-        np.array(obs_filter)
-        | np.array(full_exclusion_filt)
-        | np.array(partial_exclusion_filt)
-        | np.array(time_exclusion_filt)
+        obs_filter | full_exclusion_filt | partial_exclusion_filt | time_exclusion_filt
     )
 
     ## get statistics on number of events *in princple* coverable vs. those we actually observe
@@ -378,11 +344,13 @@ def get_plots_and_stats(
     midcov_frac_coverable = len(
         events_midcov[
             np.round((max_texp / 1e3) / events_midcov["texp_sched (ks)"])
-            > np.round(events_midcov["area(90)"] / 10)
+            > np.round(events_midcov["area(90)"] / fov)
         ]
     ) / len(events_midcov)
     midcov_ncoverable = midcov_frac_coverable * len(events_midcov)
-    frac_obs_v_coverable = np.sum(obs_filter) / (np.sum(obs_filter) + midcov_ncoverable)
+    frac_obs_vs_coverable = np.sum(obs_filter) / (
+        np.sum(obs_filter) + midcov_ncoverable
+    )
 
     ## generate event lists for plot
     obs_dist = events_all[obs_filter]["distmean"].to_list()
@@ -398,13 +366,8 @@ def get_plots_and_stats(
     texp_reject_dist = events_all[texp_reject_filt]["distmean"].to_list()
     texp_reject_area = events_all[texp_reject_filt]["area(90)"].to_list()
 
-    # outside_FoR_dist = events_all[FoR_filter]['distmean'].to_list()
-    # outside_FoR_area = events_all[FoR_filter]['area(90)'].to_list()
-
     ## save all info for selected events
-    selected_filter = [
-        (event_id in obs_id_list) for event_id in events_sched["event_id"].to_list()
-    ]
+    selected_filter = events_sched["event_id"].isin(obs_id_list)
     events_selected_gwinfo = events_all[obs_filter].copy()
     events_selected_eminfo = events_sched[selected_filter].copy()
     events_selected_allinfo = pd.concat(
@@ -414,16 +377,22 @@ def get_plots_and_stats(
         ],
         axis=1,
     )
-    csv_savename = os.path.join(outdir, "allsky_selected_em.txt".format(band, mag_AB))
+    # csv_savename = os.path.join(outdir,"allsky_selected_em.csv".format(bandpass,absmag_mean))
+    csv_savename = os.path.join(
+        outdir, statistics_dir, f"allsky_selected_em_{bandpass}_{abs(absmag_mean)}.csv"
+    )
     events_selected_eminfo.to_csv(csv_savename, index=False)
     csv_savename_gwem = os.path.join(
-        outdir, "allsky_selected_gwem.txt".format(band, mag_AB)
+        outdir, statistics_dir, "allsky_selected_gwem.csv".format(bandpass, absmag_mean)
     )
     events_selected_allinfo.to_csv(csv_savename_gwem, index=False)
 
     stat_savename = os.path.join(
-        outdir, "ultrasat_event_statistics_{}_MAB{:0.1f}.txt".format(band, mag_AB)
+        outdir,
+        statistics_dir,
+        f"ultrasat_event_statistics_{bandpass}_MAB_{abs(absmag_mean)}.txt",
     )
+
     print("Calculating statistics...")
     with open(stat_savename, "w") as outfile:
         print(
@@ -451,25 +420,25 @@ def get_plots_and_stats(
         )
         print(
             "Total number of events is "
-            + arr2bounds(len(events_all) * simrate_to_astrorate),
+            + arr2bounds(arr=len(events_all) * simrate_to_astrorate, fmt="latex"),
             file=outfile,
         )
         print(
             "Predicted number of selected events (in {} yr) is ".format(run_duration)
-            + arr2bounds(len(obs_dist) * simrate_to_astrorate),
+            + arr2bounds(arr=len(obs_dist) * simrate_to_astrorate, fmt="latex"),
             file=outfile,
         )
-        frac_obs_v_coverable = np.sum(obs_filter) / (
+        frac_obs_vs_coverable = np.sum(obs_filter) / (
             np.sum(obs_filter) + midcov_ncoverable
         )
         print(
             "Fraction of coverable events within ULTRSAT field of regard:",
-            frac_obs_v_coverable,
+            frac_obs_vs_coverable,
             file=outfile,
         )
         print(
             "(i.e., fraction of events lost to some level of sun exclusion is {:0.2f})".format(
-                (1 - frac_obs_v_coverable)
+                (1 - frac_obs_vs_coverable)
             ),
             file=outfile,
         )
@@ -515,7 +484,10 @@ def get_plots_and_stats(
         )
         print(
             "This corresponds to {} predicted events in {} yr (90% C.I.).".format(
-                arr2bounds(frac * len(obs_dist) * simrate_to_astrorate), run_duration
+                arr2bounds(
+                    arr=frac * len(obs_dist) * simrate_to_astrorate, fmt="latex"
+                ),
+                run_duration,
             ),
             file=outfile,
         )
@@ -591,19 +563,18 @@ def get_plots_and_stats(
         cbar = plt.colorbar()
         cbar.set_label("Exposure Time (s)")  # , rotation=270)
         plt.legend(loc="upper left")
+
         plt.title(
-            "Event Selection for ULTRASAT ToO with {}".format(band.upper())
-            + " $M_{AB}=$"
-            + "${:0.1f}$".format(mag_AB)
+            f"Event Selection for ULTRASAT ToO with {bandpass.upper()} $M_{{AB}}=${absmag_mean:0.1f}"
         )
         plot_savename = os.path.join(
             coverage_plots_dir,
-            "ultrasat_event_selection_{}_MAB{:0.1f}.png".format(band, mag_AB),
+            f"ultrasat_event_selection_{bandpass}_MAB_{abs(absmag_mean)}.png",
         )
         plt.savefig(plot_savename, bbox_inches="tight", dpi=300)
         plot_savename_pdf = os.path.join(
             coverage_plots_dir,
-            "ultrasat_event_selection_{}_MAB{:0.1f}.pdf".format(band, mag_AB),
+            f"ultrasat_event_selection_{bandpass}_MAB_{abs(absmag_mean)}.pdf",
         )
         plt.savefig(plot_savename_pdf, bbox_inches="tight", dpi=300)
         plt.close()
@@ -615,35 +586,33 @@ def get_plots_and_stats(
     plt.ylabel("Count")
     hist1_savename = os.path.join(
         coverage_plots_dir,
-        "ultrasat_texp_histogram_{}_MAB{:0.1f}.png".format(band, mag_AB),
+        f"ultrasat_texp_histogram_{bandpass}_MAB_{abs(absmag_mean)}.png",
     )
     plt.savefig(hist1_savename, bbox_inches="tight")
     hist1_savename_pdf = os.path.join(
         coverage_plots_dir,
-        "ultrasat_texp_histogram_{}_MAB{:0.1f}.pdf".format(band, mag_AB),
+        f"ultrasat_texp_histogram_{bandpass}_MAB_{abs(absmag_mean)}.pdf",
     )
     plt.savefig(hist1_savename_pdf, bbox_inches="tight")
     plt.close()
 
     plt.figure()
-    ax = plt.figure().gca()
+    ax = plt.gca()
     plt.hist(obs_tile_arr, bins=20, color="mediumorchid")
     plt.title(
-        "Histogram of Tiles to Reach {}% Coverage of 90% c.l. Localization Region".format(
-            coverage_threshold
-        )
+        f"Histogram of Tiles to Reach {coverage_threshold}% Coverage of 90% c.l. Localization Region"
     )
     plt.xlabel("Tiles")
     plt.ylabel("Count")
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     hist2_savename = os.path.join(
         coverage_plots_dir,
-        "ultrasat_tiling_histogram_{}_MAB{:0.1f}.png".format(band, mag_AB),
+        f"ultrasat_tiling_histogram_{bandpass}_MAB_{abs(absmag_mean)}.png",
     )
     plt.savefig(hist2_savename, bbox_inches="tight")
     hist2_savename_pdf = os.path.join(
         coverage_plots_dir,
-        "ultrasat_tiling_histogram_{}_MAB{:0.1f}.pdf".format(band, mag_AB),
+        f"ultrasat_tiling_histogram_{bandpass}_MAB_{abs(absmag_mean)}.pdf",
     )
     plt.savefig(hist2_savename_pdf, bbox_inches="tight")
     plt.close()
@@ -651,20 +620,9 @@ def get_plots_and_stats(
     return
 
 
-# allsky_file = sys.argv[1]
-# coverage_file = sys.argv[2]
-# outdir = sys.argv[3]
-# band = sys.argv[4]
-# mag_AB = float(sys.argv[5])
-
-# if len(sys.argv)==7:
-#     rate_adj = float(sys.argv[6])
-# else:
-#     rate_adj = 1.0
-
 if __name__ == "__main__":
 
-    ## set up argparser
+    # Set up argument parser
     parser = argparse.ArgumentParser(
         description="Given observing schedules, compute tiling and statistics."
     )
@@ -672,23 +630,25 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    ## set up configparser
+    # Set up config parser
     config = configparser.ConfigParser()
     config.read(args.params)
 
-    ## get info from params file
-    obs_scenario_dir = config.get("params", "obs_scenario")
+    # Get info from params file
+    # obs_scenario_dir   = config.get("params", "obs_scenario")
     outdir = config.get("params", "save_directory")
-    N_batch = int(config.get("params", "N_batch_preproc"))
-    band = config.get("params", "band")
-    source_mag = float(config.get("params", "KNe_mag_AB"))
-    astro_rate_median = float(config.get("params", "astro_bns_median"))
-    astro_rate_bounds = eval(str(config.get("params", "astro_bns_interval_90")))
-    sim_rate = float(config.get("params", "sim_bns_rate"))
-    run_duration = float(config.get("params", "obs_duration"))
-    max_texp = float(config.get("params", "max_texp"))
-    coverage_threshold = float(config.get("params", "coverage_threshold", fallback=90))
-    max_area = float(config.get("params", "max_area"))
+    N_batch = config.getint("params", "N_batch_preproc")
+    bandpass = config.get("params", "bandpass")
+    absmag_mean = config.getfloat("params", "absmag_mean")
+    astro_rate_median = config.getfloat("params", "astro_bns_median")
+    astro_rate_bounds = json.loads(config.get("params", "astro_bns_interval_90"))
+    sim_rate = config.getfloat("params", "sim_bns_rate")
+    run_duration = config.getfloat("params", "obs_duration")
+    max_texp = config.getfloat("params", "max_texp")
+    coverage_threshold = config.getfloat("params", "coverage_threshold", fallback=90)
+    max_area = config.getfloat("params", "max_area")
+    fov = config.getfloat("params", "fov")
+    split_pop = config.getboolean("params", "split_pop", fallback=False)
 
     # Define paths
     coverage_plots_dir = os.path.join(outdir, "coverage_plots")
@@ -698,23 +658,29 @@ if __name__ == "__main__":
     os.makedirs(coverage_plots_dir, exist_ok=True)
     os.makedirs(statistics_dir, exist_ok=True)
 
-    allsky_file = obs_scenario_dir + "/allsky.dat"
-    coverage_file = outdir + "/allsky_coverage.txt"
+    if split_pop:
+        allsky_file = os.path.join(outdir, "allsky_bns_nsbh.csv")
+    else:
+        allsky_file = os.path.join(outdir, "allsky_bbh_bns_nsbh.csv")
 
-    astro_rate = [astro_rate_median, astro_rate_bounds[0], astro_rate_bounds[1]]
+    coverage_file = os.path.join(outdir, "allsky_coverage.csv")
+
+    astro_rate = [astro_rate_median] + astro_rate_bounds
 
     get_plots_and_stats(
         allsky_file,
         coverage_file,
         coverage_plots_dir,
+        statistics_dir,
         outdir,
         N_batch,
-        band,
-        source_mag,
+        bandpass,
+        absmag_mean,
         astro_rate,
         sim_rate,
         run_duration,
         max_texp,
         max_area,
+        fov,
         coverage_threshold,
     )

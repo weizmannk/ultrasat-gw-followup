@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 
 """
----------------------------------------------------------------------------------------------------
-ABOUT THE SCRIPT
----------------------------------------------------------------------------------------------------
-Author          : Ramodgwendé Weizmann KIENDREBEOGO
-Email           : kiend.weizman7@gmail.com / weizmann.kiendrebeogo@oca.eu
-Repository URL  : https://github.com/weizmannk/ultrasat-gw-followup.git
-Creation Date   : January 2024
-Description     : This Python script preprocesses ULTRASAT follow-up data for an LVK observing run
-                  scenario. It filters simulated events based on sky localization area less than
-                  a specified maximum (`max_area`), and batches them for submission, creating
-                  batch files with a specified number of events per batch (`N_batch`).
-Usage           : python localization_cut_and_batch.py /path/to/params.ini
+ULTRASAT Follow-Up Data Preprocessing
+
+This script preprocesses ULTRASAT follow-up data for an LVK observing run.
+It filters simulated events based on sky localization area (`max_area`) and
+batches them for submission, grouping events into `N_batch` files.
+
+Usage:
+    python3 localization_cut_and_batch.py /path/to/params.ini
 """
 
 import os
@@ -25,6 +21,7 @@ import logging
 from astropy.table import Table
 from astropy.cosmology import Planck15 as cosmo, z_at_value
 import astropy.units as u
+from m4opt.utils.console import status
 
 # Configure logging
 logging.basicConfig(
@@ -92,15 +89,19 @@ def downselect_and_batch(
 
         # Load events data
         if split_pop:
-            logging.info(f"Using only BNS and NSBH populations. Excluded BBH.")
-            allsky = Table.read(allsky_file, format="ascii.fast_tab")
-            injections = Table.read(injections_file, format="ascii.fast_tab")
-            BNS, NSBH, BBH = classify_populations(injections)
-            events = allsky[BNS | NSBH].to_pandas()
+            with status(f"Using only BNS and NSBH populations. Excluded BBH."):
+                allsky = Table.read(allsky_file, format="ascii.fast_tab")
+                injections = Table.read(injections_file, format="ascii.fast_tab")
+                BNS, NSBH, _ = classify_populations(injections)
+                events = allsky[BNS | NSBH].to_pandas()
+                events.to_csv(os.path.join(outdir, "allsky_bns_nsbh.csv"), index=False)
 
         else:
-            logging.info(f"Including all CBC populations (BNS, NSBH, and BBH).")
-            events = pd.read_csv(allsky_file, delimiter="\t", skiprows=1)
+            with status(f"Including all CBC populations (BNS, NSBH, and BBH)."):
+                events = pd.read_csv(allsky_file, delimiter="\t", skiprows=1)
+                events.to_csv(
+                    os.path.join(outdir, "allsky_bbh_bns_nsbh.csv"), index=False
+                )
 
         # Check required columns
         required_columns = ["area(90)"]
@@ -112,8 +113,12 @@ def downselect_and_batch(
             sys.exit(1)
 
         # Filter events by max_area
-        logging.info(f"Cutoff event area: {max_area} sq. deg.")
-        events_filtered = events[events["area(90)"] <= max_area]
+        with status(f"Cutoff event area: {max_area} sq. deg."):
+            events_filtered = events[events["area(90)"] <= max_area]
+            if events_filtered.empty:
+                logging.info("No events found with area <= max_area.")
+                return
+
         percent_filtered = len(events_filtered) / len(events) * 100
 
         # Log summary of the filtered events
@@ -123,8 +128,8 @@ def downselect_and_batch(
         logging.info(f"Total filtered events: {len(events_filtered)}")
 
         # Save the filtered events
-        savepath = os.path.join(outdir, "allsky_cut.txt")
-        events_filtered.to_csv(savepath, index=False, sep=" ")
+        savepath = os.path.join(outdir, "allsky_cut.csv")
+        events_filtered.to_csv(savepath, index=False)  # , sep=' ')
         logging.info(f"Filtered events saved to {savepath}.")
 
         # Create a subdirectory for batch files
@@ -132,12 +137,15 @@ def downselect_and_batch(
         os.makedirs(batch_dir, exist_ok=True)
 
         # Split filtered events into batches
-        batches = np.array_split(events_filtered, N_batch)
-        for i, batch in enumerate(batches):
-            batch_filename = f"allsky_batch{i}.txt"
-            batch_path = os.path.join(batch_dir, batch_filename)
-            batch.to_csv(batch_path, index=False, sep=",")
-            logging.info(f"Batch file created: {batch_path} with {len(batch)} events.")
+        with status(f"Batching process"):
+            batches = np.array_split(events_filtered, N_batch)
+            for i, batch in enumerate(batches):
+                batch_filename = f"allsky_batch{i}.csv"
+                batch_path = os.path.join(batch_dir, batch_filename)
+                batch.to_csv(batch_path, index=False)  # sep=',')
+                logging.info(
+                    f"Batch file created: {batch_path} with {len(batch)} events."
+                )
 
         logging.info("Batching process completed successfully.")
 

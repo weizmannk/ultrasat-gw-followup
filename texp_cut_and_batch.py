@@ -1,26 +1,19 @@
 #!/usr/bin/env python3
 
 """
----------------------------------------------------------------------------------------------------
-ABOUT THE SCRIPT
----------------------------------------------------------------------------------------------------
-Author          : Ramodgwendé Weizmann KIENDREBEOGO
-Email           : kiend.weizman7@gmail.com / weizmann.kiendrebeogo@oca.eu
-Repository URL  : https://github.com/weizmannk/ultrasat-gw-followup.git
-Creation Date   : January 2024
-Description     : This Python script processes exposure time data from ULTRASAT follow-up simulations
-                  for an LVK observing run scenario. It performs the following steps:
+This Python script processes exposure time data from ULTRASAT follow-up simulations
+for an LVK observing run scenario. It performs the following steps:
 
-                  1. Loads and aggregates exposure time results from multiple batch files.
-                  2. Ensures that all exposure times meet a minimum threshold (`min_texp`).
-                  3. Converts exposure times from seconds to kiloseconds (ks).
-                  4. Saves the processed data into a master output file (`allsky_sched_full.txt`).
-                  5. Splits the dataset into smaller batch files for scheduling.
+1. Loads and aggregates exposure time results from multiple batch files.
+2. Ensures that all exposure times meet a minimum threshold (`min_texp`).
+3. Converts exposure times from seconds to kiloseconds (ks).
+4. Saves the processed data into a master output file (`allsky_sched_full.csv`).
+5. Splits the dataset into smaller batch files for scheduling.
 
-                  The script reads configuration parameters from an 'ini' file and automatically
-                  creates necessary output directories.
+The script reads configuration parameters from an 'ini' file and automatically
+creates necessary output directories.
 
-Usage           : python texp_cut_and_batch.py /path/to/params.ini
+Usage           : python3 texp_cut_and_batch.py /path/to/params.ini
 
 Parameters in INI File:
     - save_directory  : Output directory where processed files will be stored.
@@ -30,8 +23,8 @@ Parameters in INI File:
     - min_texp        : Minimum allowed exposure time in seconds.
 
 Output Files:
-    - allsky_sched_full.txt    : Processed exposure times for all events.
-    - texp_sched/allsky_sched_batch*.txt : Batched exposure time files for scheduling.
+    - allsky_sched_full.csv    : Processed exposure times for all events.
+    - texp_sched/allsky_sched_batch*.csv : Batched exposure time files for scheduling.
 
 """
 
@@ -49,9 +42,9 @@ logging.basicConfig(
 )
 
 
-def texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, band, min_texp):
+def texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, bandpass, min_texp):
     """
-    Processes exposure time data from max-texp-by-sky-loc.py output and prepares batch files.
+    Processes exposure time data from texp_cut_and_batch.py output and prepares batch files.
 
     Steps:
         1. Load and aggregate event files from multiple batches.
@@ -63,9 +56,9 @@ def texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, band, min_texp):
     -----------------------
     texp_dir (str)   : Path to the directory containing input event files.
     out_dir (str)    : Path to save output files.
-    N_in (int)       : Number of input batches (from max-texp-by-sky-loc.py).
+    N_in (int)       : Number of input batches (from texp_cut_and_batch.py).
     N_out (int)      : Number of output batches (for the scheduler).
-    band (str)       : UV band ('nuv') used for parsing filenames.
+    bandpass (str)   : UV band ('nuv') used for parsing filenames.
     min_texp (float) : Minimum exposure time in seconds. Any lower values will be set to this.
 
     Returns:
@@ -77,13 +70,16 @@ def texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, band, min_texp):
 
     # Load and concatenate all batch files
     for i in range(N_in):
-        batch_file = os.path.join(texp_dir, f"allsky_texp_max_cut_{band}_batch{i}.txt")
+        batch_file = os.path.join(
+            texp_dir, f"allsky_texp_max_cut_{bandpass}_batch{i}.csv"
+        )
 
         if not os.path.exists(batch_file):
             logging.warning(f"File {batch_file} not found. Skipping.")
             continue
 
-        batch_data = pd.read_csv(batch_file, delimiter=" ")
+        batch_data = pd.read_csv(batch_file, delimiter=",")
+        print(batch_data)
         all_batches.append(batch_data)
 
     if not all_batches:
@@ -103,8 +99,10 @@ def texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, band, min_texp):
     )
 
     # Save processed data
-    full_output_path = os.path.join(out_dir, "allsky_sched_full.txt")
-    events[["event_id", "t_exp (ks)"]].to_csv(full_output_path, index=False, sep=" ")
+    full_output_path = os.path.join(out_dir, "allsky_sched_full.csv")
+    events[["event_id", "t_exp (ks)"]].to_csv(
+        full_output_path, index=False
+    )  # , sep=' ')
     logging.info(f"Processed data saved to: {full_output_path}")
 
     # Create output directory for batch files
@@ -115,8 +113,8 @@ def texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, band, min_texp):
     list_of_batches = np.array_split(events[["event_id", "t_exp (ks)"]], N_out)
 
     for i, batch in enumerate(list_of_batches):
-        batch_file = os.path.join(batch_dir, f"allsky_sched_batch{i}.txt")
-        batch.to_csv(batch_file, index=False, sep=",")
+        batch_file = os.path.join(batch_dir, f"allsky_sched_batch{i}.csv")
+        batch.to_csv(batch_file, index=False)  # , sep=',')
         logging.info(f"Batch file created: {batch_file}")
 
     logging.info("Batching process completed successfully.")
@@ -141,7 +139,7 @@ if __name__ == "__main__":
         out_dir = config.get("params", "save_directory")
         N_in = config.getint("params", "N_batch_preproc", fallback=1)
         N_out = config.getint("params", "N_batch_sched", fallback=N_in)
-        band = config.get("params", "band")
+        bandpass = config.get("params", "bandpass")
         min_texp = config.getfloat("params", "min_texp")
     except (configparser.NoSectionError, configparser.NoOptionError, ValueError) as e:
         logging.error(f"Error reading configuration: {e}")
@@ -152,4 +150,4 @@ if __name__ == "__main__":
     os.makedirs(texp_dir, exist_ok=True)
 
     # Run processing function
-    texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, band, min_texp)
+    texp_cut_and_batch(texp_dir, out_dir, N_in, N_out, bandpass, min_texp)

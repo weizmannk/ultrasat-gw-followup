@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
 """
+ULTRASAT Workflow Execution Script
+
+This script automates the workflow for scheduling and processing ULTRASAT follow-up observations based on gravitational wave (GW) events.
+
+Key Features:
+1. Reads observation parameters from a `.ini` configuration file.
+2. Executes `texp_cut_and_batch.py` to preprocess exposure times and batch files.
+3. Iterates over batch files and generates ULTRASAT observation schedules.
+4. Submits jobs to HTCondor for scheduling and execution.
+5. Logs all processes for monitoring and debugging.
+
+Assumptions:
+- Event batch files contain required fields for observation scheduling.
+- Exposure time constraints align with ULTRASAT mission parameters.
+- `m4opt` is installed and available in the system path.
 
 Usage:
     python3 run_workflow_2.py --params /path/to/params_file.ini [--log_dir /path/to/logs]
 
 Example:
-    python3 run_workflow_2.py --params /home/weizmann.kiendrebeogo/M4OPT-ULTRSASAT/ultrasat-gw-followup/params.ini
+    python3 run_workflow_2.py --params ./params-O5.ini
 """
-
 
 import os
 import sys
@@ -15,23 +29,22 @@ import subprocess
 import configparser
 import argparse
 import logging
-from pathlib import Path
 import pandas as pd
-import textwrap
+from pathlib import Path
+
+from m4opt.utils.console import status
 
 
 def setup_logging(log_dir):
     """
     Configure logging for the script.
-
-    Parameters:
-        log_dir (str): Directory where log files will be stored.
     """
-    log_file = os.path.join(log_dir, "workflow2.log")
+    log_file = os.path.join(log_dir, "workflow.log")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
+        force=True,
     )
 
 
@@ -43,55 +56,75 @@ def run_texp_cut_and_batch(params_file, followup_dir):
         params_file (str): Path to the params file (absolute path).
         followup_dir (str): Absolute path to the 'ULTRASAT-followup' directory.
     """
-    logging.info(
+    with status(
         "Running texp_cut_and_batch.py to process exposure times and batch files..."
-    )
-    texp_script = os.path.join(followup_dir, "texp_cut_and_batch.py")
+    ):
+        texp_script = os.path.join(followup_dir, "texp_cut_and_batch.py")
 
-    if not os.path.exists(texp_script):
-        logging.error(f"texp_max_cut_and_batch.py script not found: {texp_script}")
+        if not os.path.exists(texp_script):
+            logging.error(f"texp_cut_and_batch.py script not found: {texp_script}")
+            sys.exit(1)
+
+        try:
+            result = subprocess.run(
+                ["python3", texp_script, params_file],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            logging.info("texp_cut_and_batch.py completed successfully.")
+            logging.debug(f"texp_cut_and_batch.py output: {result.stdout}")
+        except subprocess.CalledProcessError as e:
+            logging.error("Error running texp_cut_and_batch.py:")
+            logging.error(e.stderr)
+            sys.exit(1)
+
+
+def process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, prog_dir, params):
+    """
+    Process all batch files and submit them to HTCondor.
+    """
+    if not os.path.isdir(batches_dir):
+        logging.error(f"Batches directory does not exist: {batches_dir}")
         sys.exit(1)
 
-    try:
-        result = subprocess.run(
-            ["python3", texp_script, params_file],
-            check=True,
-            text=True,
-            capture_output=True,
-        )
-        logging.info("texp_cut_and_batch.py completed successfully.")
-        logging.debug(f"texp_cut_and_batch.py output: {result.stdout}")
-    except subprocess.CalledProcessError as e:
-        logging.error("Error running texp_cut_and_batch.py:")
-        logging.error(e.stderr)
-        sys.exit(1)
+    for batch_file in os.listdir(batches_dir):
+        batch_file_path = os.path.join(batches_dir, batch_file)
+        with status(f"Submitting Condor job for {batch_file}"):
+            create_condor_submission(
+                batch_file_path, log_dir, sched_dir, skymap_dir, prog_dir, params
+            )
 
 
-def create_condor_submission_file_for_scheduler(
+def create_condor_submission(
     batch_file_path, log_dir, sched_dir, skymap_dir, prog_dir, params
 ):
     """
-    Creates and submits an HTCondor job for each batch file to process ULTRASAT ToO schedules.
-
-    Parameters:
-        batch_file_path (str): Path to the batch file.
-        log_dir (str): Directory for log files.
-        sched_dir (str): Directory for schedule files.
-        skymap_dir (str): Directory containing skymap files.
-        params (dic): parameters.
+    Create and submit an HTCondor job for each batch file.
     """
-
-    # Determine the path to the dorado-scheduling executable
     try:
         m4opt_path = subprocess.check_output(["which", "m4opt"]).decode().strip()
         if not os.path.exists(m4opt_path):
-            raise FileNotFoundError
+            raise FileNotFoundError("m4opt executable not found.")
     except Exception:
         logging.error("m4opt executable not found in PATH.")
         sys.exit(1)
 
     batch_filename = os.path.basename(batch_file_path).replace(".txt", "")
-    job_name = f"ULTRASAT_{batch_filename}"
+    job_name = f"ULTRASAT-Workflow-{batch_filename}"
+
+    # read params
+    mission = params["mission"]
+    absmag_mean = params["absmag_mean"]
+    absmag_stdev = params["absmag_stdev"]
+    snr = params["snr"]
+    deadline = params["deadline"]
+    delay = params["delay"]
+    exptime_min = params["min_texp"]
+    max_texp = params["max_texp"]
+    bandpass = params["bandpass"].upper()
+    nside = params["nside"]
+    job = params["job"]
 
     try:
         df = pd.read_csv(batch_file_path)
@@ -99,70 +132,52 @@ def create_condor_submission_file_for_scheduler(
         logging.error(f"Failed to read batch file {batch_file_path}: {e}")
         return
 
-    # read params
-    mission = params["mission"]
-    absmag_mean = params["KNe_mag_AB"]
-    absmag_stdev = params["absmag_stdev"]
-    snr = params["snr"]
-    deadline = params["deadline"]
-    delay = params["delay"]
-    exptime_min = params["min_texp"]
-    bandpass = params["band"].upper()
-    nside = params["nside"]
-    job = params["job"]
-
-    # Loop through rows and process each event_id and t_exp as required
     for _, row in df.iterrows():
         try:
             event_id = int(row["event_id"])
-            # convert the expousre time max in seconds
-            texp = row["t_exp (ks)"]  # * 1000
+            # texp = row['t_exp (ks)']
         except (KeyError, ValueError) as e:
             logging.error(f"Invalid data in batch file {batch_file_path}: {e}")
             continue
 
-        logging.info(f"Duration is {deadline}")
-        logging.info(f"Processing event {event_id} with exposure time {texp} ks.")
+        with status(f"Schedule plan for processing event {event_id}"):
+            skymap_file = os.path.join(skymap_dir, f"{event_id}.fits")
+            sched_file = os.path.join(sched_dir, f"{event_id}.ecsv")
+            prog_file = os.path.join(prog_dir, f"PROGRESS_{event_id}.ecsv")
+            wrapper_script = os.path.join(log_dir, f"wrapper_{event_id}.sh")
 
-        skymap_file = os.path.join(skymap_dir, f"{event_id}.fits")
-        sched_file = os.path.join(sched_dir, f"{event_id}.ecsv")
-        prog_file = os.path.join(prog_dir, f"PROGRESS_{event_id}.ecsv")
-        wrapper_script = os.path.join(log_dir, f"wrapper_{event_id}.sh")
+            wrapper_content = (
+                f"#!/bin/bash\n"
+                f"\n{m4opt_path} "
+                f"schedule "
+                f"{skymap_file} "
+                f"{sched_file} "
+                f"--mission={mission} "
+                f"--bandpass={bandpass} "
+                f"--absmag-mean={absmag_mean} "
+                f"--absmag-stdev={absmag_stdev} "
+                f"--exptime-min='{exptime_min} s' "
+                f"--exptime-max='{max_texp} s' "
+                f"--snr={snr} "
+                f"--delay='{delay}' "
+                f"--deadline='{deadline}' "
+                f"--timelimit='20min' "
+                f"--nside={nside} "
+                f"--record-progress {prog_file} "
+                f"--jobs {job} "
+            )
 
-        wrapper_content = (
-            f"#!/bin/bash\n"
-            f"\n{m4opt_path} "
-            f"schedule "
-            f"{skymap_file} "
-            f"{sched_file} "
-            f"--mission={mission} "
-            f"--bandpass={bandpass} "
-            f"--absmag-mean={absmag_mean} "
-            f"--absmag-stdev={absmag_stdev} "
-            f"--exptime-min='{exptime_min} s' "
-            f"--exptime-max='{texp} ks' "
-            f"--snr={snr} "
-            f"--delay='{delay}' "
-            f"--deadline='{deadline}' "
-            f"--timelimit='20min' "
-            f"--nside={nside} "
-            f"--record-progress {prog_file} "
-            f"--jobs {job} "
-        )
+            try:
+                with open(wrapper_script, "w") as f:
+                    f.write(wrapper_content)
+                os.chmod(wrapper_script, 0o755)
+            except Exception as e:
+                logging.error(
+                    f"Failed to create wrapper script for event {event_id}: {e}"
+                )
+                continue
 
-        # Write the wrapper script
-        try:
-            with open(wrapper_script, "w") as f:
-                f.write(wrapper_content)
-            os.chmod(wrapper_script, 0o755)  # Make the script executable
-            logging.info(f"Created wrapper script: {wrapper_script}")
-        except Exception as e:
-            logging.error(f"Failed to create wrapper script for event {event_id}: {e}")
-            continue
-
-        # Create the Condor submission script without indentation
-        condor_submit_script = textwrap.dedent(
-            f"""
+            condor_submit_script = f"""
             +MaxHours = 24
             universe = vanilla
             accounting_group = ligo.dev.o4.cbc.pe.bayestar
@@ -171,10 +186,9 @@ def create_condor_submission_file_for_scheduler(
             output = {log_dir}/$(Cluster)_$(Process).out
             error = {log_dir}/$(Cluster)_$(Process).err
             log = {log_dir}/$(Cluster)_$(Process).log
-            JobBatchName = ULTRASAT_Workflow_{batch_filename}
             request_memory = 50000 MB
-            request_disk   = 8000 MB
-            request_cpus   = 1
+            request_disk = 8000 MB
+            request_cpus = 1
             on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
             on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
             on_exit_hold_reason = (ExitBySignal == True \
@@ -182,101 +196,27 @@ def create_condor_submission_file_for_scheduler(
                 : strcat("The job exited with code ", ExitCode))
             environment = "OMP_NUM_THREADS=1"
             queue 1
-        """
-        )
+            """
 
-        logging.debug(
-            f"Condor submit script for event {event_id}:\n{condor_submit_script}"
-        )
-
-        try:
-            proc = subprocess.Popen(
-                ["condor_submit"],
-                text=True,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            stdout, stderr = proc.communicate(input=condor_submit_script)
-            if proc.returncode == 0:
-                logging.info(
-                    f"Condor submit output for {batch_filename}, event {event_id}: {stdout.strip()}"
+            try:
+                proc = subprocess.Popen(
+                    ["condor_submit"],
+                    text=True,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                 )
-            else:
-                logging.error(
-                    f"Condor submit error for {batch_filename}, event {event_id}: {stderr.strip()}"
-                )
-        except Exception as e:
-            logging.error(
-                f"An error occurred while creating the Condor submission for {batch_filename}, event {event_id}: {e}"
-            )
-
-
-def process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, prog_dir, params):
-    """
-    Process all batch files in the specified directory and submit them to HTCondor.
-
-    Parameters:
-        batches_dir (str): Directory containing batch files.
-        log_dir (str): Directory for log files.
-        sched_dir (str): Directory for schedule files.
-        skymap_dir (str): Directory containing skymap files.
-        params (dic):aprameters.
-    """
-
-    if not os.path.isdir(batches_dir):
-        logging.error(f"Batches directory does not exist: {batches_dir}")
-        sys.exit(1)
-
-    batch_files = [
-        f
-        for f in os.listdir(batches_dir)
-        if os.path.isfile(os.path.join(batches_dir, f))
-    ]
-    if not batch_files:
-        logging.error(f"No batch files found in {batches_dir}. Exiting.")
-        sys.exit(1)
-
-    for batch_file in batch_files:
-        batch_file_path = os.path.abspath(os.path.join(batches_dir, batch_file))
-        logging.info(f"Submitting Condor job for batch file: {batch_file_path}")
-
-        create_condor_submission_file_for_scheduler(
-            batch_file_path,
-            log_dir,
-            sched_dir,
-            skymap_dir,
-            prog_dir,
-            params,
-        )
-
-
-def create_directories(outdir, additional_dirs=None):
-    """
-    Create necessary directories for the workflow.
-
-    Parameters:
-        outdir (str): Base output directory.
-        additional_dirs (list, optional): Additional directories to create within outdir.
-    """
-    directories = [
-        outdir,
-        os.path.join(outdir, "schedules"),
-        os.path.join(outdir, "progress"),
-        os.path.join(outdir, "texp_out"),
-        os.path.join(outdir, "texp_sched"),
-    ]
-    if additional_dirs:
-        for additional_dir in additional_dirs:
-            directories.append(os.path.join(outdir, additional_dir))
-
-    for directory in directories:
-        try:
-            os.makedirs(directory, exist_ok=True)
-            logging.info(f"Ensured directory exists: {directory}")
-        except Exception as e:
-            logging.error(f"Failed to create directory {directory}: {e}")
-            sys.exit(1)
+                stdout, stderr = proc.communicate(input=condor_submit_script)
+                if proc.returncode == 0:
+                    logging.info(
+                        f"Condor job submitted for {event_id}: {stdout.strip()}"
+                    )
+                else:
+                    logging.error(
+                        f"Condor submit error for {event_id}: {stderr.strip()}"
+                    )
+            except Exception as e:
+                logging.error(f"Error submitting Condor job for {event_id}: {e}")
 
 
 def read_params_file(params_file):
@@ -296,16 +236,19 @@ def read_params_file(params_file):
         params = {
             "obs_scenario_dir": config.get("params", "obs_scenario"),
             "save_directory": config.get("params", "save_directory"),
-            "KNe_mag_AB": config.getfloat("params", "KNe_mag_AB"),
+            "absmag_mean": config.getfloat("params", "absmag_mean"),
             "absmag_stdev": config.getfloat("params", "absmag_stdev"),
             "snr": config.get("params", "snr"),
             "deadline": config.get("params", "deadline"),
             "mission": config.get("params", "mission"),
             "delay": config.get("params", "delay"),
             "min_texp": config.get("params", "min_texp"),
-            "band": config.get("params", "band"),
-            "nside": config.get("params", "nside"),
+            "max_texp": config.getfloat("params", "max_texp"),
+            "bandpass": config.get("params", "bandpass"),
+            "nside": config.getint("params", "nside"),
             "job": config.get("params", "job"),
+            "dist_measure": config.get("params", "distance_measure"),
+            "max_area": config.getfloat("params", "max_area", fallback=2000),
         }
 
         logging.debug(f"Parameters read from {params_file}: {params}")
@@ -315,420 +258,48 @@ def read_params_file(params_file):
         sys.exit(1)
 
 
-def parse_arguments():
+def main():
     """
-    Parse command-line arguments.
-
-    Returns:
-        argparse.Namespace: Parsed arguments.
+    Main function to execute the ULTRASAT workflow.
     """
     parser = argparse.ArgumentParser(
-        description="Run the second part of the ULTRASAT workflow and submit jobs using HTCondor."
+        description="Run the ULTRASAT workflow and submit jobs using HTCondor."
     )
     parser.add_argument(
         "-p", "--params", type=str, required=True, help="Path to the params file."
     )
     parser.add_argument(
-        "--log_dir",
-        type=str,
-        default="./logs2_O5",
-        help="Directory for log files (default: ./Logs2).",
+        "--log_dir", type=str, default="./logs2_O5", help="Directory for log files."
     )
-    return parser.parse_args()
+    args = parser.parse_args()
 
-
-def main():
-    """
-    Main function to execute the workflow.
-    """
-    args = parse_arguments()
-
-    # Convert directories to absolute paths
     log_dir = os.path.abspath(args.log_dir)
     params_file = os.path.abspath(args.params)
+    os.makedirs(log_dir, exist_ok=True)
+    setup_logging(log_dir)
 
-    # Ensure log directory exists before setting up logging
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-        setup_logging(log_dir)
-        logging.info(f"Log directory is set to: {log_dir}")
-    except Exception as e:
-        print(f"Failed to create log directory {log_dir}: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    logging.info("Starting the second part of the ULTRASAT workflow.")
-
-    # Read parameters from the .ini file first to extract necessary directories
     params = read_params_file(params_file)
-    outdir = os.path.abspath(params["save_directory"])
     obs_scenario_dir = os.path.abspath(params["obs_scenario_dir"])
-
-    # Create all necessary directories
-    create_directories(outdir)
-
-    # Define paths
-    sched_dir = os.path.join(outdir, "schedules")
-    prog_dir = os.path.join(outdir, "progress")
+    outdir = os.path.abspath(params["save_directory"])
     skymap_dir = os.path.join(obs_scenario_dir, "allsky")
 
-    # Ensure schedules directory exists
-    os.makedirs(sched_dir, exist_ok=True)
-
-    # Run the texp_cut_and_batch.py script
     followup_dir = os.path.dirname(params_file)
     run_texp_cut_and_batch(params_file, followup_dir)
 
-    logging.info("texp_cut_and_batch.py executed successfully.")
+    with status("Schedule Plan"):
+        directories = {
+            name: os.path.join(outdir, name)
+            for name in ["schedules", "progress", "texp_sched"]
+        }
+        for path in directories.values():
+            os.makedirs(path, exist_ok=True)
 
-    # Define the batches directory
-    batches_dir = os.path.join(outdir, "texp_sched")
+        sched_dir, prog_dir, batches_dir = directories.values()
 
-    # Submit Condor jobs for each batch file
-    process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, prog_dir, params)
-
-    logging.info("All batch files processed and submitted as Condor jobs.")
+        process_batch_files(
+            batches_dir, log_dir, sched_dir, skymap_dir, prog_dir, params
+        )
 
 
 if __name__ == "__main__":
     main()
-
-
-# #!/usr/bin/env python3
-# """
-# Run the second part of the UVEX workflow and submit jobs using HTCondor.
-
-# Usage:
-#     python3 run_workflow_2.py --params /path/to/params_file.ini [--log_dir /path/to/logs]
-
-# Example:
-#     python3 run_workflow_2.py --params /home/weizmann.kiendrebeogo/Dorado/uvex-followup/default_params.ini
-# """
-
-# import os
-# import sys
-# import subprocess
-# import configparser
-# import argparse
-# import logging
-# from pathlib import Path
-# import pandas as pd
-
-# def setup_logging(log_dir):
-#     """
-#     Configure logging for the script.
-
-#     Parameters:
-#         log_dir (str): Directory where log files will be stored.
-#     """
-#     log_file = os.path.join(log_dir, 'workflow2.log')
-#     logging.basicConfig(
-#         level=logging.INFO,
-#         format='%(asctime)s [%(levelname)s] %(message)s',
-#         handlers=[
-#             logging.FileHandler(log_file),
-#             logging.StreamHandler(sys.stdout)
-#         ]
-#     )
-
-# def run_texp_cut_and_batch(params_file, followup_dir):
-#     """
-#     Run the texp_cut_and_batch.py script to process exposure times and batch files.
-
-#     Parameters:
-#         params_file (str): Path to the params file (absolute path).
-#         followup_dir (str): Absolute path to the 'uvex-followup' directory.
-#     """
-#     logging.info("Running texp_cut_and_batch.py to process exposure times and batch files...")
-#     texp_script = os.path.join(followup_dir, 'texp_cut_and_batch.py')
-
-#     if not os.path.exists(texp_script):
-#         logging.error(f"texp_cut_and_batch.py script not found: {texp_script}")
-#         sys.exit(1)
-
-#     try:
-#         result = subprocess.run(
-#             ['python3', texp_script, params_file],
-#             check=True,
-#             text=True,
-#             #capture_output=True
-#         )
-#         logging.info("texp_cut_and_batch.py completed successfully.")
-#         logging.debug(f"texp_cut_and_batch.py output: {result.stdout}")
-#     except subprocess.CalledProcessError as e:
-#         logging.error("Error running texp_cut_and_batch.py:")
-#         logging.error(e.stderr)
-#         sys.exit(1)
-
-
-# def create_condor_submission_file_for_scheduler(batch_file_path, log_dir, sched_dir, skymap_dir, tiling_time):
-#     """
-#     Creates and submits an HTCondor job for each batch file to process UVEX ToO schedules.
-
-#     Parameters:
-#         params (dict): Dictionary containing parameter values.
-#         batch_file_path (str): Path to the batch file.
-#         log_dir (str): Directory for log files.
-#     """
-
-#     # Determine the path to the dorado-scheduling executable
-#     try:
-#         dorado_scheduling_path = subprocess.check_output(["which", "dorado-scheduling"]).decode().strip()
-#         if not os.path.exists(dorado_scheduling_path):
-#             raise FileNotFoundError
-#     except Exception:
-#         logging.error("dorado-scheduling executable not found in PATH.")
-#         sys.exit(1)
-
-#     batch_filename = os.path.basename(batch_file_path).replace('.txt', '')
-#     job_name = f"UVEX_Scheduler_{batch_filename}"
-
-#     df = pd.read_csv(batch_file_path)
-
-#     # Loop through rows and process each event_id and t_exp as required
-#     for _, row in df.iterrows():
-#         event_id = row['event_id'].astype('int')
-#         texp = row['t_exp (ks)']
-#         logging.info(f"Duration is {tiling_time}")
-#         logging.info(f"Processing event {event_id} with exposure time {texp} ks.")
-
-#         skymap_file = os.path.join(skymap_dir, f"{event_id}.fits")
-#         sched_file = os.path.join(sched_dir, f"{event_id}.ecsv")
-#         wrapper_script = os.path.join(log_dir, f"wrapper_{event_id}.sh")
-
-#         wrapper_content = (
-#             f"#!/bin/bash\n"
-#             f"\n{dorado_scheduling_path} "
-#             f"{skymap_file} "
-#             f"-o {sched_file} "
-#             f"--mission=uvex "
-#             f"--exptime='{texp} ks' "
-#             f" --duration='{tiling_time}' "
-#             f"--roll-step='360 deg' "
-#             f"--skygrid-method=sinusoidal "
-#             f"--skygrid-step='10 deg2' "
-#             f"--nside=128 "
-#             f"--delay='10 yr' "
-#             f"-j 10"
-#         )
-
-
-#         #arguments = {os.path.join(skymap_dir, f'{event_id}.fits')} -o {os.path.join(sched_dir, f'{event_id}.ecsv')} --mission=uvex --exptime='{texp} ks' --duration='{tiling_time}' --roll-step='360 deg' --skygrid-method=sinusoidal --skygrid-step='10 deg2' --nside=128 --delay='10 yr' -j 10
-
-
-#         # Écrire le script wrapper
-#         try:
-#             with open(wrapper_script, 'w') as f:
-#                 f.write(wrapper_content)
-#             os.chmod(wrapper_script, 0o755)  # Rendre le script exécutable
-#             logging.info(f"Created wrapper script: {wrapper_script}")
-#         except Exception as e:
-#             logging.error(f"Failed to create wrapper script for event {event_id}: {e}")
-#             continue
-
-
-#         condor_submit_script = f'''
-#                                 universe = vanilla
-#                                 accounting_group = ligo.dev.o4.cbc.pe.bayestar
-#                                 getenv = true
-#                                 executable = {wrapper_script}
-#                                 output = {log_dir}/$(Cluster)_$(Process).out
-#                                 error = {log_dir}/$(Cluster)_$(Process).err
-#                                 log = {log_dir}/$(Cluster)_$(Process).log
-#                                 JobBatchName = UVEX_Workflow_{batch_filename}
-#                                 request_memory = 1000 MB
-#                                 request_disk   = 100 MB
-#                                 request_cpus   = 1
-#                                 on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
-#                                 on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
-#                                 on_exit_hold_reason = (ExitBySignal == True ? "The job exited with signal " . ExitSignal : "The job exited with code " . ExitCode)
-#                                 environment = "OMP_NUM_THREADS=1"
-#                                 queue
-#                             '''
-#         print(condor_submit_script)
-
-#         try:
-#             proc = subprocess.Popen(
-#                 ['condor_submit'],
-#                 text=True,
-#                 stdin=subprocess.PIPE,
-#                 stdout=subprocess.PIPE,
-#                 stderr=subprocess.PIPE
-#             )
-#             stdout, stderr = proc.communicate(input=condor_submit_script)
-#             if proc.returncode == 0:
-#                 logging.info(f"Condor submit output for {batch_filename}: {stdout.strip()}")
-#             else:
-#                 logging.error(f"Condor submit error for {batch_filename}: {stderr.strip()}")
-#         except Exception as e:
-#             logging.error(f"An error occurred while creating the Condor submission for {batch_filename}: {e}")
-
-
-# def process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, tiling_time):
-#     """
-#     Process all batch files in the specified directory and submit them to HTCondor.
-
-#     Parameters:
-#         params_file (str): Path to the params file.
-#         batches_dir (str): Directory containing batch files.
-#         log_dir (str): Directory for log files.
-#     """
-
-#     if not os.path.isdir(batches_dir):
-#         logging.error(f"Batches directory does not exist: {batches_dir}")
-#         sys.exit(1)
-
-#     batch_files = [f for f in os.listdir(batches_dir) if os.path.isfile(os.path.join(batches_dir, f))]
-#     if not batch_files:
-#         logging.error(f"No batch files found in {batches_dir}. Exiting.")
-#         sys.exit(1)
-
-
-#     for batch_file in batch_files:
-#         batch_file_path = os.path.abspath(os.path.join(batches_dir, batch_file))
-#         logging.info(f"Submitting Condor job for batch file: {batch_file_path}")
-
-#     create_condor_submission_file_for_scheduler(
-#         batch_file_path,
-#         log_dir,
-#         sched_dir,
-#         skymap_dir,
-#         tiling_time,
-#     )
-
-# def create_directories(outdir, additional_dirs=None):
-#     """
-#     Create necessary directories for the workflow.
-
-#     Parameters:
-#         outdir (str): Base output directory.
-#         additional_dirs (list, optional): Additional directories to create within outdir.
-#     """
-#     directories = [
-#         outdir,
-#         os.path.join(outdir, 'schedules'),
-#         os.path.join(outdir, 'texp_out'),
-#         os.path.join(outdir, 'texp_sched')
-#     ]
-#     if additional_dirs:
-#         for additional_dir in additional_dirs:
-#             directories.append(os.path.join(outdir, additional_dir))
-
-#     for directory in directories:
-#         try:
-#             os.makedirs(directory, exist_ok=True)
-#             logging.info(f"Ensured directory exists: {directory}")
-#         except Exception as e:
-#             logging.error(f"Failed to create directory {directory}: {e}")
-#             sys.exit(1)
-
-# def read_params_file(params_file):
-#     """
-#     Read and parse the parameters from the .ini file.
-
-#     Parameters:
-#         params_file (str): Path to the params file.
-
-#     Returns:
-#         dict: Dictionary containing parameter values.
-#     """
-#     config = configparser.ConfigParser()
-#     config.read(params_file)
-
-#     try:
-#         params = {
-#             'obs_scenario_dir': config.get("params", "obs_scenario"),
-#             'save_directory': config.get("params", "save_directory"),
-#             'band': config.get("params", "band"),
-#             'KNe_mag_AB': config.getfloat("params", "KNe_mag_AB"),
-#             'distance_measure': config.get("params", "distance_measure"),
-#             'max_texp': config.getfloat("params", "max_texp"),
-#             'tiling_time': config.get("params", "tiling_time")
-#         }
-#         logging.debug(f"Parameters read from {params_file}: {params}")
-#         return params
-#     except (configparser.NoSectionError, configparser.NoOptionError, ValueError) as e:
-#         logging.error(f"Error reading parameters from {params_file}: {e}")
-#         sys.exit(1)
-
-
-# def parse_arguments():
-#     """
-#     Parse command-line arguments.
-
-#     Returns:
-#         argparse.Namespace: Parsed arguments.
-#     """
-#     parser = argparse.ArgumentParser(
-#         description="Run the second part of the UVEX workflow and submit jobs using HTCondor."
-#     )
-#     parser.add_argument(
-#         "-p", "--params",
-#         type=str,
-#         required=True,
-#         help="Path to the params file."
-#     )
-#     parser.add_argument(
-#         "--log_dir",
-#         type=str,
-#         default="./Logs2",
-#         help="Directory for log files (default: ./logs2)."
-#     )
-#     return parser.parse_args()
-
-
-# def main():
-#     """
-#     Main function to execute the workflow.
-#     """
-#     args = parse_arguments()
-
-#     # Convert directories to absolute paths
-#     log_dir = os.path.abspath(args.log_dir)
-#     params_file = os.path.abspath(args.params)
-
-#     # Ensure log directory exists before setting up logging
-#     try:
-#         os.makedirs(log_dir, exist_ok=True)
-#         setup_logging(log_dir)
-#         logging.info(f"Log directory is set to: {log_dir}")
-#     except Exception as e:
-#         print(f"Failed to create log directory {log_dir}: {e}", file=sys.stderr)
-#         sys.exit(1)
-
-#     logging.info("Starting the second part of the UVEX workflow.")
-
-
-#     # Read parameters from the .ini file first to extract necessary directories
-#     params = read_params_file(params_file)
-#     outdir = os.path.abspath(params['save_directory'])
-#     obs_scenario_dir = os.path.abspath(params['obs_scenario_dir'])
-
-#     tiling_time = params['tiling_time']
-
-#     # Create all necessary directories
-#     create_directories(outdir)
-
-
-#     # Define paths
-#     sched_dir = os.path.join(outdir, 'schedules')
-#     skymap_dir = os.path.join(obs_scenario_dir, 'allsky')
-
-#     # Ensure schedules directory exists
-#     os.makedirs(sched_dir, exist_ok=True)
-
-#     # Run the texp_cut_and_batch.py script
-#     followup_dir = os.path.dirname(params_file)
-#     run_texp_cut_and_batch(params_file, followup_dir)
-
-#     logging.info("texp_cut_and_batch.py executed successfully.")
-
-#     # Define the batches directory
-#     batches_dir = os.path.join(outdir, 'texp_sched')
-
-#     # Submit Condor jobs for each batch file
-#     process_batch_files(batches_dir, log_dir, sched_dir, skymap_dir, tiling_time)
-
-#     logging.info("All batch files processed and submitted as Condor jobs.")
-
-# if __name__ == "__main__":
-#     main()

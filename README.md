@@ -1,1 +1,0 @@
-# ultrasat-gw-followup
