@@ -31,8 +31,11 @@ m4opt schedule --mission ultrasat
 ```
 
 ---
+## 2. Install CPLEX
 
-## 2. Installing Additional Dependencies
+[Install CPLEX](https://m4opt.readthedocs.io/en/latest/install/cplex.html)
+
+## 4. Installing Additional Dependencies
 
 ```bash
 pip install pandas
@@ -47,7 +50,7 @@ For more details, visit [SciPy Interpolation Guide](https://scipy.github.io/devd
 
 ---
 
-## 3. Verifying Installation
+## 5. Verifying Installation
 ```bash
 m4opt schedule --help
 ```
