@@ -5,8 +5,8 @@ This script automates the third stage of the ULTRASAT observing scenario simulat
 
 Key Features:
 1. Reads observation parameters from a `.ini` configuration file.
-2. Executes `compute_tiling.py` to determine ULTRASAT follow-up coverage.
-3. Runs `make-coverage-plots.py` to generate statistics and visualizations.
+2. Executes `./workflow/compute_tiling.py` to determine ULTRASAT follow-up coverage.
+3. Runs `./workflow/make-coverage-plots.py` to generate statistics and visualizations.
 
 Assumptions:
 - The parameter file includes required observation constraints and mission settings.
@@ -47,7 +47,7 @@ def setup_logging(log_dir):
 
 def run_compute_tiling(params_file, followup_dir):
     """
-    Run the compute_tiling.py script to compute ULTRASAT follow-up coverage.
+    Run the ./workflow/compute_tiling.py script to compute ULTRASAT follow-up coverage.
 
     Parameters:
         params_file (str): Path to the params file (absolute path).
@@ -55,11 +55,13 @@ def run_compute_tiling(params_file, followup_dir):
     """
 
     with status("Compute the Misssion follow-up coverage"):
-        compute_tiling_script = os.path.join(followup_dir, "compute_tiling.py")
+        compute_tiling_script = os.path.join(
+            followup_dir, workflow, "compute_tiling.py"
+        )
 
         if not os.path.exists(compute_tiling_script):
             logging.error(
-                f"compute_tiling.py script not found: {compute_tiling_script}"
+                f"./workflow/compute_tiling.py script not found: {compute_tiling_script}"
             )
             sys.exit(1)
 
@@ -70,10 +72,10 @@ def run_compute_tiling(params_file, followup_dir):
                 text=True,
                 # capture_output=True
             )
-            logging.info("compute_tiling.py completed successfully.")
-            logging.debug(f"compute_tiling.py output: {result.stdout}")
+            logging.info("./workflow/compute_tiling.py completed successfully.")
+            logging.debug(f"./workflow/compute_tiling.py output: {result.stdout}")
         except subprocess.CalledProcessError as e:
-            logging.error("Error running compute_tiling.py:")
+            logging.error("Error running ./workflow/compute_tiling.py:")
             logging.error(e.stderr)
             sys.exit(1)
 
@@ -87,11 +89,13 @@ def run_make_coverage_plots(params_file, followup_dir):
         followup_dir (str): Absolute path to the 'ultrasat-gw-followup' directory.
     """
     with status("Generate Statistics and Plots"):
-        make_plots_script = os.path.join(followup_dir, "make-coverage-plots.py")
+        make_plots_script = os.path.join(
+            followup_dir, workflow, "make-coverage-plots.py"
+        )
 
         if not os.path.exists(make_plots_script):
             logging.error(
-                f"make-coverage-plots.py script not found: {make_plots_script}"
+                f"./workflow/make-coverage-plots.py script not found: {make_plots_script}"
             )
             sys.exit(1)
 
@@ -102,10 +106,10 @@ def run_make_coverage_plots(params_file, followup_dir):
                 text=True,
                 # capture_output=True
             )
-            logging.info("make-coverage-plots.py completed successfully.")
-            logging.debug(f"make-coverage-plots.py output: {result.stdout}")
+            logging.info("./workflow/make-coverage-plots.py completed successfully.")
+            logging.debug(f"./workflow/make-coverage-plots.py output: {result.stdout}")
         except subprocess.CalledProcessError as e:
-            logging.error("Error running make-coverage-plots.py:")
+            logging.error("Error running ./workflow/make-coverage-plots.py:")
             logging.error(e.stderr)
             sys.exit(1)
 

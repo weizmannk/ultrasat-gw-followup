@@ -21,6 +21,30 @@ Follow the installation instructions:
 - **Observing scenarios run O5 and O6 using an SNR threshold of 10:**
   [Zenodo Record](https://zenodo.org/records/14585837)
 
+You can easily download it using a Python script by running the following command:
+
+```
+python3 Zenodo_Downloader.py
+```
+This is a tool for interacting with the Zenodo API, facilitating the download of files based on DOI. The script retrieves the latest version DOI associated with a provided permanent DOI and downloads the corresponding file from Zenodo.
+
+Or use wget:
+
+```
+wget https://zenodo.org/record/14585837/files/runs_SNR-10.zip
+```
+
+**Unzip the data**
+
+```
+unzip runs_SNR-10.zip
+```
+
+- **If needed, you can visualize observing run statistics:**
+  [Summary Statistics](doc/summary.rst)
+
+
+
 - **Paper on the observing scenarios data:**
   Kiendrebeogo et al. (2023)
   DOI: [10.3847/1538-4357/acfcb1](https://iopscience.iop.org/article/10.3847/1538-4357/acfcb1)
@@ -33,11 +57,11 @@ The pipeline consists of three main workflow execution scripts, each responsible
 ### **1. Initial Processing and Filtering**
 This script (`run_workflow_1.py`) automates the first stage of the ULTRASAT workflow, including:
 - **Parsing configuration parameters** from a `.ini` file.
-- **Filtering simulated GW events** (`localization_cut_and_batch.py`):
+- **Filtering simulated GW events** (`workflow/localization_cut_and_batch.py`):
   - Filters events based on **sky localization area (`max_area`)**.
   - Retains events **below the threshold** and groups them into batches.
   - Uses `classify_populations` to categorize events into **BNS, NSBH, and BBH**.
-- **Processing GW localization maps** (`max-texp-by-sky-loc.py`):
+- **Processing GW localization maps** (`workflow/max-texp-by-sky-loc.py`):
   - Reads **GW localization maps** and extracts sky coverage probabilities.
   - Computes the **maximum exposure time (`texp_max`)** within the **90% credible region**.
   - Filters out events exceeding a **maximum allowed exposure time (`max_texp`)**.
@@ -48,14 +72,14 @@ This script (`run_workflow_1.py`) automates the first stage of the ULTRASAT work
 
 #### **Command:**
 ```
-python3 run_workflow_1.py --params /path/to/params_file.ini
+python3 run_workflow_1.py --params params-O5.ini
 ```
 ---
 ### **2. Observation Scheduling and Job Submission**
 This script (`run_workflow_2.py`) automates the second stage of the ULTRASAT workflow, focusing on scheduling observations for selected gravitational wave events.
 
 - **Reading observation parameters** from a `.ini` configuration file.
-- **Preprocessing exposure times** using `texp_cut_and_batch.py`:
+- **Preprocessing exposure times** using `workflow/texp_cut_and_batch.py`:
   - Extracts exposure time constraints from the configuration file.
   - Filters out events that exceed the mission-defined exposure limits.
   - Generates batch files with viable observation targets.
@@ -71,7 +95,7 @@ This script (`run_workflow_2.py`) automates the second stage of the ULTRASAT wor
 
 #### **Command:**
 ```
-python3 run_workflow_2.py --params /path/to/params_file.ini
+python3 run_workflow_2.py --params params-O5.ini
 ```
 
 ---
@@ -79,11 +103,11 @@ python3 run_workflow_2.py --params /path/to/params_file.ini
 This script (`run_workflow_3.py`) automates the third stage of the ULTRASAT workflow, focusing on computing follow-up coverage for gravitational wave events and generating visualizations.
 
 - **Reading observation parameters** from a `.ini` configuration file.
-- **Computing ULTRASAT follow-up coverage** using `compute_tiling.py`:
+- **Computing ULTRASAT follow-up coverage** using `workflow/compute_tiling.py`:
   - Processes selected gravitational wave events.
   - Determines ULTRASAT’s coverage for each event.
   - Generates observation plans based on mission constraints.
-- **Generating statistical plots and visualizations** using `make-coverage-plots.py`:
+- **Generating statistical plots and visualizations** using `workflow/make-coverage-plots.py`:
   - Creates sky maps illustrating ULTRASAT’s coverage.
   - Produces histograms and summary statistics for observation efficiency.
   - Outputs visual reports for scientific analysis.
@@ -93,5 +117,5 @@ This script (`run_workflow_3.py`) automates the third stage of the ULTRASAT work
 
 #### **Command:**
 ```
-python3 run_workflow_3.py --params /path/to/params_file.ini
+python3 run_workflow_3.py --params params-O5.ini
 ```

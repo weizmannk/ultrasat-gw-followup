@@ -5,11 +5,11 @@ ULTRASAT Workflow Execution Script
 Description     :
                 This script automates the execution of the ULTRASAT workflow, including:
                 1. Parsing configuration parameters from an `.ini` file.
-                2. Running a localization filtering script (`localization_cut_and_batch.py`) to generate batch files.
+                2. Running a localization filtering script (`./workflow/localization_cut_and_batch.py`) to generate batch files.
                    - Filters simulated gravitational wave (GW) events based on sky localization area (`max_area`).
                    - Retains events with localization area below the threshold and groups them into batches.
                    - Uses `classify_populations` to categorize CBC events into BNS, NSBH, and BBH.
-                3. Processing GW localization maps (`max-texp-by-sky-loc.py`) to determine maximum exposure times.
+                3. Processing GW localization maps (`./workflow/max-texp-by-sky-loc.py`) to determine maximum exposure times.
                    - Reads GW localization maps and extracts sky coverage probabilities.
                    - Computes the maximum exposure time (`texp_max`) within the 90% credible region.
                    - Filters out events exceeding a maximum allowed exposure time (`max_texp`).
@@ -60,7 +60,9 @@ def run_localization_script(params_file, followup_dir):
     - Ensures only events suitable for ULTRASAT follow-ups are considered.
     """
 
-    localization_script = os.path.join(followup_dir, "localization_cut_and_batch.py")
+    localization_script = os.path.join(
+        followup_dir, workflow, "localization_cut_and_batch.py"
+    )
 
     if not os.path.exists(localization_script):
         logging.error(f"Localization script not found: {localization_script}")
@@ -80,7 +82,7 @@ def run_localization_script(params_file, followup_dir):
 
 def process_batch_files(params_file, followup_dir, batches_dir, log_dir):
     """
-    Process each batch file using `max-texp-by-sky-loc.py` and submit jobs to HTCondor.
+    Process each batch file using `./workflow/max-texp-by-sky-loc.py` and submit jobs to HTCondor.
 
     - Reads GW localization maps and extracts sky coverage probabilities.
     - Computes the maximum exposure time (`texp_max`) for each event.
@@ -88,7 +90,7 @@ def process_batch_files(params_file, followup_dir, batches_dir, log_dir):
     - Saves filtered event lists for optimized follow-up observations.
     - Submits each batch file as an independent HTCondor job.
     """
-    script_path = os.path.join(followup_dir, "max-texp-by-sky-loc.py")
+    script_path = os.path.join(followup_dir, workflow, "max-texp-by-sky-loc.py")
 
     if not os.path.exists(script_path):
         logging.error(f"Script not found: {script_path}")

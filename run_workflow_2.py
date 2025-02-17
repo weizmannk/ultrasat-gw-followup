@@ -6,7 +6,7 @@ This script automates the workflow for scheduling and processing ULTRASAT follow
 
 Key Features:
 1. Reads observation parameters from a `.ini` configuration file.
-2. Executes `texp_cut_and_batch.py` to preprocess exposure times and batch files.
+2. Executes `./workflow/texp_cut_and_batch.py` to preprocess exposure times and batch files.
 3. Iterates over batch files and generates ULTRASAT observation schedules.
 4. Submits jobs to HTCondor for scheduling and execution.
 5. Logs all processes for monitoring and debugging.
@@ -59,10 +59,12 @@ def run_texp_cut_and_batch(params_file, followup_dir):
     with status(
         "Running texp_cut_and_batch.py to process exposure times and batch files..."
     ):
-        texp_script = os.path.join(followup_dir, "texp_cut_and_batch.py")
+        texp_script = os.path.join(followup_dir, workflow, "texp_cut_and_batch.py")
 
         if not os.path.exists(texp_script):
-            logging.error(f"texp_cut_and_batch.py script not found: {texp_script}")
+            logging.error(
+                f"./workflow/texp_cut_and_batch.py script not found: {texp_script}"
+            )
             sys.exit(1)
 
         try:
@@ -72,10 +74,10 @@ def run_texp_cut_and_batch(params_file, followup_dir):
                 text=True,
                 capture_output=True,
             )
-            logging.info("texp_cut_and_batch.py completed successfully.")
-            logging.debug(f"texp_cut_and_batch.py output: {result.stdout}")
+            logging.info("./workflow/texp_cut_and_batch.py completed successfully.")
+            logging.debug(f"./workflow/texp_cut_and_batch.py output: {result.stdout}")
         except subprocess.CalledProcessError as e:
-            logging.error("Error running texp_cut_and_batch.py:")
+            logging.error("Error running ./workflow/texp_cut_and_batch.py:")
             logging.error(e.stderr)
             sys.exit(1)
 

@@ -15,8 +15,21 @@ nmma.egg-info/
 *.out
 .nfs*
 
+# Download Zenodo data
+runs_SNR-10/
+runs_SNR-10.zip
 
 # Simulations files
+BNS_NSBH/
 O5HLVK/
 O6HLVK/
 log*/
+
+
+# . files
+.gitignore.swm
+.gitignore.swn
+.gitignore.swo
+.gitignore.swp
+*.ipynb_checkpoints
+*.DS_Store
