@@ -16,8 +16,6 @@ Follow the installation instructions:
 ---
 ## Download the Observing Scenarios for O5 and O6
 
-###**[Observing Scenario Data](https://github.com/lpsinger/observing-scenarios-simulations)**
-
 - **Observing scenarios run O5 and O6 using an SNR threshold of 10:**
   [Zenodo Record](https://zenodo.org/records/14585837)
 
@@ -33,21 +31,22 @@ Or use wget:
 ```
 wget https://zenodo.org/record/14585837/files/runs_SNR-10.zip
 ```
-
+---
 **Unzip the data**
 
 ```
 unzip runs_SNR-10.zip
 ```
-
+---
 - **If needed, you can visualize observing run statistics:**
   [Summary Statistics](doc/summary.rst)
-
-
+---
 
 - **Paper on the observing scenarios data:**
   Kiendrebeogo et al. (2023)
   DOI: [10.3847/1538-4357/acfcb1](https://iopscience.iop.org/article/10.3847/1538-4357/acfcb1)
+
+  ###**[Observing Scenario repository](https://github.com/lpsinger/observing-scenarios-simulations)**
 
 ---
 ## ULTRASAT Workflow Execution
