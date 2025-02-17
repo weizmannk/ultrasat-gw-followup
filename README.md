@@ -24,7 +24,7 @@ Follow the installation instructions:
 You can easily download it using a Python script by running the following command:
 
 ```
-python3 Zenodo_Downloader.py
+python3 zenodo_downloader.py
 ```
 This is a tool for interacting with the Zenodo API, facilitating the download of files based on DOI. The script retrieves the latest version DOI associated with a provided permanent DOI and downloads the corresponding file from Zenodo.
 
