@@ -1,0 +1,20 @@
+# essentials
+build/
+__pycache__/
+.version
+nmma.egg-info/
+.DS_Store
+
+# development
+.vscode/
+
+
+# log files
+*.log
+*.err
+*.out
+
+# Simulations files
+O5HLVK/
+O6HLVK/
+log*/
