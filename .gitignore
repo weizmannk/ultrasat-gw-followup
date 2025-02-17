@@ -13,6 +13,8 @@ nmma.egg-info/
 *.log
 *.err
 *.out
+.nfs*
+
 
 # Simulations files
 O5HLVK/
