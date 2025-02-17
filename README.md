@@ -14,7 +14,7 @@ Follow the installation instructions:
 [M4OPT Documentation](doc/index.md)
 
 ---
-## Download the Observing Scenarios for O5 and O6
+## **Download the Observing Scenarios for O5 and O6**
 
 - **Observing scenarios run O5 and O6 using an SNR threshold of 10:**
   [Zenodo Record](https://zenodo.org/records/14585837)
@@ -31,7 +31,7 @@ Or use wget:
 ```
 wget https://zenodo.org/record/14585837/files/runs_SNR-10.zip
 ```
----
+
 **Unzip the data**
 
 ```
@@ -46,7 +46,7 @@ unzip runs_SNR-10.zip
   Kiendrebeogo et al. (2023)
   DOI: [10.3847/1538-4357/acfcb1](https://iopscience.iop.org/article/10.3847/1538-4357/acfcb1)
 
-  ###**[Observing Scenario repository](https://github.com/lpsinger/observing-scenarios-simulations)**
+  Here is the GitHub repository of [Observing Scenario](https://github.com/lpsinger/observing-scenarios-simulations).
 
 ---
 ## ULTRASAT Workflow Execution
