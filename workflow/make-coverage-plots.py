@@ -379,16 +379,15 @@ def get_plots_and_stats(
     )
     # csv_savename = os.path.join(outdir,"allsky_selected_em.csv".format(bandpass,absmag_mean))
     csv_savename = os.path.join(
-        outdir, statistics_dir, f"allsky_selected_em_{bandpass}_{abs(absmag_mean)}.csv"
+        statistics_dir, f"allsky_selected_em_{bandpass}_{abs(absmag_mean)}.csv"
     )
     events_selected_eminfo.to_csv(csv_savename, index=False)
     csv_savename_gwem = os.path.join(
-        outdir, statistics_dir, "allsky_selected_gwem.csv".format(bandpass, absmag_mean)
+        statistics_dir, "allsky_selected_gwem.csv".format(bandpass, absmag_mean)
     )
     events_selected_allinfo.to_csv(csv_savename_gwem, index=False)
 
     stat_savename = os.path.join(
-        outdir,
         statistics_dir,
         f"ultrasat_event_statistics_{bandpass}_MAB_{abs(absmag_mean)}.txt",
     )

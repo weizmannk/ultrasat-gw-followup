@@ -227,7 +227,6 @@ def compute_tiling(
         output_file = os.path.join(outdir, "allsky_coverage.csv")
         try:
             results_df.to_csv(output_file, index=False)
-            results_df.to_csv("allsky_coverage.csv", index=False)
             logging.info(f"Saved results to {output_file}")
         except Exception as e:
             logging.error(f"Failed to save results: {e}")

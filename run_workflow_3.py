@@ -198,6 +198,7 @@ def main():
     logging.info("Starting the third part of the ULTRASAT workflow.")
 
     args = parse_arguments()
+    params_file = os.path.abspath(args.params)
 
     # Read parameters from the .ini file first to extract necessary directories
     params = read_params_file(params_file)
