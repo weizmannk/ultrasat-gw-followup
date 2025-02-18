@@ -48,36 +48,32 @@ class ZenodoDownloader:
             "Host": "zenodo.org",
             "Connection": "keep-alive",
             "Pragma": "no-cache",
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Expires": "0",
         }
         self.latest_doi = self.get_latest_zenodo_doi()
 
     def get_latest_zenodo_doi(self):
+        """Retrieves the latest version DOI using the Zenodo API."""
+        url = f"https://zenodo.org/api/records/{self.permanent_doi}"
+        r = requests.get(url, headers=self.headers)
 
-        """Retrieves the latest version DOI associated with the provided permanent DOI.
+        if r.status_code != 200:
+            raise ValueError(f"Could not retrieve metadata: {r.status_code}")
 
-        :return: Latest version DOI
-        :rtype: str
-        """
-        r = requests.get(
-            f"https://zenodo.org/record/{self.permanent_doi}",
-            allow_redirects=True,
-            headers=self.headers,
-        )
-        try:
-            data = r.text.split("10.5281/zenodo.")[1]
-            doi = re.findall(r"^\d+", data)[0]
-        except Exception as e:
-            raise ValueError(f"Could not find latest DOI: {str(e)}")
-        return doi
+        record_data = r.json()
+
+        # Check if "doi" exists in the response
+        latest_doi = record_data.get("doi")
+        if not latest_doi:
+            return self.permanent_doi  # Default to original DOI if not found
+
+        latest_doi_number = latest_doi.split("10.5281/zenodo.")[-1]
+        print(f"Latest DOI N° : {latest_doi_number}")
+        return latest_doi_number
 
     def download_zenodo_data(self):
-
-        """Downloads the file from Zenodo based on the provided DOI and file name.
-
-        :return: None
-        """
-
+        """Downloads the file from Zenodo based on the provided DOI and file name."""
         try:
             # Fetching the Zenodo record metadata using the DOI
             r = requests.get(

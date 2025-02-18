@@ -56,10 +56,8 @@ def run_texp_cut_and_batch(params_file, followup_dir):
         params_file (str): Path to the params file (absolute path).
         followup_dir (str): Absolute path to the 'ULTRASAT-followup' directory.
     """
-    with status(
-        "Running texp_cut_and_batch.py to process exposure times and batch files..."
-    ):
-        texp_script = os.path.join(followup_dir, workflow, "texp_cut_and_batch.py")
+    with status("Running exposure times cutoff and batch files..."):
+        texp_script = os.path.join(followup_dir, "workflow/texp_cut_and_batch.py")
 
         if not os.path.exists(texp_script):
             logging.error(
@@ -74,7 +72,7 @@ def run_texp_cut_and_batch(params_file, followup_dir):
                 text=True,
                 capture_output=True,
             )
-            logging.info("./workflow/texp_cut_and_batch.py completed successfully.")
+            logging.info("Exposure times cutoff completed successfully.")
             logging.debug(f"./workflow/texp_cut_and_batch.py output: {result.stdout}")
         except subprocess.CalledProcessError as e:
             logging.error("Error running ./workflow/texp_cut_and_batch.py:")
@@ -142,83 +140,74 @@ def create_condor_submission(
             logging.error(f"Invalid data in batch file {batch_file_path}: {e}")
             continue
 
-        with status(f"Schedule plan for processing event {event_id}"):
-            skymap_file = os.path.join(skymap_dir, f"{event_id}.fits")
-            sched_file = os.path.join(sched_dir, f"{event_id}.ecsv")
-            prog_file = os.path.join(prog_dir, f"PROGRESS_{event_id}.ecsv")
-            wrapper_script = os.path.join(log_dir, f"wrapper_{event_id}.sh")
+        skymap_file = os.path.join(skymap_dir, f"{event_id}.fits")
+        sched_file = os.path.join(sched_dir, f"{event_id}.ecsv")
+        prog_file = os.path.join(prog_dir, f"PROGRESS_{event_id}.ecsv")
+        wrapper_script = os.path.join(log_dir, f"wrapper_{event_id}.sh")
 
-            wrapper_content = (
-                f"#!/bin/bash\n"
-                f"\n{m4opt_path} "
-                f"schedule "
-                f"{skymap_file} "
-                f"{sched_file} "
-                f"--mission={mission} "
-                f"--bandpass={bandpass} "
-                f"--absmag-mean={absmag_mean} "
-                f"--absmag-stdev={absmag_stdev} "
-                f"--exptime-min='{exptime_min} s' "
-                f"--exptime-max='{max_texp} s' "
-                f"--snr={snr} "
-                f"--delay='{delay}' "
-                f"--deadline='{deadline}' "
-                f"--timelimit='20min' "
-                f"--nside={nside} "
-                f"--record-progress {prog_file} "
-                f"--jobs {job} "
+        wrapper_content = (
+            f"#!/bin/bash\n"
+            f"\n{m4opt_path} "
+            f"schedule "
+            f"{skymap_file} "
+            f"{sched_file} "
+            f"--mission={mission} "
+            f"--bandpass={bandpass} "
+            f"--absmag-mean={absmag_mean} "
+            f"--absmag-stdev={absmag_stdev} "
+            f"--exptime-min='{exptime_min} s' "
+            f"--exptime-max='{max_texp} s' "
+            f"--snr={snr} "
+            f"--delay='{delay}' "
+            f"--deadline='{deadline}' "
+            f"--timelimit='20min' "
+            f"--nside={nside} "
+            f"--write-progress {prog_file} "
+            f"--jobs {job} "
+        )
+
+        try:
+            with open(wrapper_script, "w") as f:
+                f.write(wrapper_content)
+            os.chmod(wrapper_script, 0o755)
+        except Exception as e:
+            logging.error(f"Failed to create wrapper script for event {event_id}: {e}")
+            continue
+
+        condor_submit_script = f"""
+        +MaxHours = 24
+        universe = vanilla
+        accounting_group = ligo.dev.o4.cbc.pe.bayestar
+        getenv = true
+        executable = {wrapper_script}
+        output = {log_dir}/$(Cluster)_$(Process).out
+        error = {log_dir}/$(Cluster)_$(Process).err
+        log = {log_dir}/$(Cluster)_$(Process).log
+        request_memory = 50000 MB
+        request_disk = 8000 MB
+        request_cpus = 1
+        on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
+        on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
+        on_exit_hold_reason = (ExitBySignal == True \
+            ? strcat("The job exited with signal ", ExitSignal) \
+            : strcat("The job exited with code ", ExitCode))
+        environment = "OMP_NUM_THREADS=1"
+        queue 1
+        """
+
+        try:
+            proc = subprocess.Popen(
+                ["condor_submit"],
+                text=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
-
-            try:
-                with open(wrapper_script, "w") as f:
-                    f.write(wrapper_content)
-                os.chmod(wrapper_script, 0o755)
-            except Exception as e:
-                logging.error(
-                    f"Failed to create wrapper script for event {event_id}: {e}"
-                )
-                continue
-
-            condor_submit_script = f"""
-            +MaxHours = 24
-            universe = vanilla
-            accounting_group = ligo.dev.o4.cbc.pe.bayestar
-            getenv = true
-            executable = {wrapper_script}
-            output = {log_dir}/$(Cluster)_$(Process).out
-            error = {log_dir}/$(Cluster)_$(Process).err
-            log = {log_dir}/$(Cluster)_$(Process).log
-            request_memory = 50000 MB
-            request_disk = 8000 MB
-            request_cpus = 1
-            on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
-            on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
-            on_exit_hold_reason = (ExitBySignal == True \
-                ? strcat("The job exited with signal ", ExitSignal) \
-                : strcat("The job exited with code ", ExitCode))
-            environment = "OMP_NUM_THREADS=1"
-            queue 1
-            """
-
-            try:
-                proc = subprocess.Popen(
-                    ["condor_submit"],
-                    text=True,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                stdout, stderr = proc.communicate(input=condor_submit_script)
-                if proc.returncode == 0:
-                    logging.info(
-                        f"Condor job submitted for {event_id}: {stdout.strip()}"
-                    )
-                else:
-                    logging.error(
-                        f"Condor submit error for {event_id}: {stderr.strip()}"
-                    )
-            except Exception as e:
-                logging.error(f"Error submitting Condor job for {event_id}: {e}")
+            stdout, stderr = proc.communicate(input=condor_submit_script)
+            if proc.returncode != 0:
+                logging.error(f"Condor submit error for {event_id}: {stderr.strip()}")
+        except Exception as e:
+            logging.error(f"Error submitting Condor job for {event_id}: {e}")
 
 
 def read_params_file(params_file):
@@ -271,19 +260,19 @@ def main():
         "-p", "--params", type=str, required=True, help="Path to the params file."
     )
     parser.add_argument(
-        "--log_dir", type=str, default="./logs2_O5", help="Directory for log files."
+        "--log_dir", type=str, default="logs2", help="Directory for log files."
     )
     args = parser.parse_args()
-
-    log_dir = os.path.abspath(args.log_dir)
     params_file = os.path.abspath(args.params)
-    os.makedirs(log_dir, exist_ok=True)
-    setup_logging(log_dir)
 
     params = read_params_file(params_file)
     obs_scenario_dir = os.path.abspath(params["obs_scenario_dir"])
     outdir = os.path.abspath(params["save_directory"])
     skymap_dir = os.path.join(obs_scenario_dir, "allsky")
+
+    log_dir = os.path.join(outdir, args.log_dir)
+    os.makedirs(log_dir, exist_ok=True)
+    setup_logging(log_dir)
 
     followup_dir = os.path.dirname(params_file)
     run_texp_cut_and_batch(params_file, followup_dir)
@@ -301,6 +290,8 @@ def main():
         process_batch_files(
             batches_dir, log_dir, sched_dir, skymap_dir, prog_dir, params
         )
+
+    logging.info("All batch files processed and submitted as Condor jobs.")
 
 
 if __name__ == "__main__":

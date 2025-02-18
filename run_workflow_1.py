@@ -61,7 +61,7 @@ def run_localization_script(params_file, followup_dir):
     """
 
     localization_script = os.path.join(
-        followup_dir, workflow, "localization_cut_and_batch.py"
+        followup_dir, "workflow/localization_cut_and_batch.py"
     )
 
     if not os.path.exists(localization_script):
@@ -90,7 +90,7 @@ def process_batch_files(params_file, followup_dir, batches_dir, log_dir):
     - Saves filtered event lists for optimized follow-up observations.
     - Submits each batch file as an independent HTCondor job.
     """
-    script_path = os.path.join(followup_dir, workflow, "max-texp-by-sky-loc.py")
+    script_path = os.path.join(followup_dir, "workflow/max-texp-by-sky-loc.py")
 
     if not os.path.exists(script_path):
         logging.error(f"Script not found: {script_path}")
@@ -171,7 +171,7 @@ def parse_arguments():
         "-p", "--params", type=str, required=True, help="Path to the params file."
     )
     parser.add_argument(
-        "--log_dir", type=str, default="./logs1_O5", help="Directory for log files."
+        "--log_dir", type=str, default="./logs1", help="Directory for log files."
     )
     return parser.parse_args()
 
@@ -204,11 +204,8 @@ def main():
     """
     with status("Starting ULTRASAT workflow N°1."):
         args = parse_arguments()
-        log_dir = os.path.abspath(args.log_dir)
-        params_file = os.path.abspath(args.params)
-        os.makedirs(log_dir, exist_ok=True)
 
-        setup_logging(log_dir)
+        params_file = os.path.abspath(args.params)
 
         # Read parameters from the `.ini` file
         params = read_params_file(params_file)
@@ -217,6 +214,10 @@ def main():
         outdir = os.path.abspath(params["save_directory"])
         batches_dir = os.path.join(outdir, "batches")
         os.makedirs(batches_dir, exist_ok=True)
+
+        log_dir = os.path.join(outdir, args.log_dir)
+        os.makedirs(log_dir, exist_ok=True)
+        setup_logging(log_dir)
 
         followup_dir = os.path.dirname(params_file)
 

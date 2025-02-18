@@ -55,9 +55,7 @@ def run_compute_tiling(params_file, followup_dir):
     """
 
     with status("Compute the Misssion follow-up coverage"):
-        compute_tiling_script = os.path.join(
-            followup_dir, workflow, "compute_tiling.py"
-        )
+        compute_tiling_script = os.path.join(followup_dir, "workflow/compute_tiling.py")
 
         if not os.path.exists(compute_tiling_script):
             logging.error(
@@ -90,7 +88,7 @@ def run_make_coverage_plots(params_file, followup_dir):
     """
     with status("Generate Statistics and Plots"):
         make_plots_script = os.path.join(
-            followup_dir, workflow, "make-coverage-plots.py"
+            followup_dir, "workflow/make-coverage-plots.py"
         )
 
         if not os.path.exists(make_plots_script):
@@ -187,7 +185,7 @@ def parse_arguments():
     parser.add_argument(
         "--log_dir",
         type=str,
-        default="./logs3_O5",
+        default="./logs3",
         help="Directory for log files (default: ./Logs3).",
     )
     return parser.parse_args()
@@ -197,27 +195,21 @@ def main():
     """
     Main function to execute the workflow.
     """
-    args = parse_arguments()
-
-    # Convert directories to absolute paths
-    log_dir = os.path.abspath(args.log_dir)
-    params_file = os.path.abspath(args.params)
-
-    # Ensure log directory exists before setting up logging
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-        setup_logging(log_dir)
-        logging.info(f"Log directory is set to: {log_dir}")
-    except Exception as e:
-        print(f"Failed to create log directory {log_dir}: {e}", file=sys.stderr)
-        sys.exit(1)
-
     logging.info("Starting the third part of the ULTRASAT workflow.")
+
+    args = parse_arguments()
 
     # Read parameters from the .ini file first to extract necessary directories
     params = read_params_file(params_file)
+
+    # Convert directories to absolute paths
     outdir = os.path.abspath(params["save_directory"])
     obs_scenario_dir = os.path.abspath(params["obs_scenario_dir"])
+
+    # Ensure log directory exists before setting up logging
+    log_dir = os.path.join(outdir, args.log_dir)
+    os.makedirs(log_dir, exist_ok=True)
+    setup_logging(log_dir)
 
     # Get the path to the 'ultrasat-gw-followup' directory
     followup_dir = os.path.dirname(params_file)

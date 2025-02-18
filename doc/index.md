@@ -11,8 +11,8 @@ This installation guide covers setting up M4OPT, dependencies, and the UVEX miss
 
 ### Create and Activate a Conda Environment
 ```bash
-conda create --name uvex-m4opt python=3.10
-conda activate uvex-m4opt
+conda create --name m4opt_env python=3.11
+conda activate m4opt_env
 ```
 
 ### Clone and Install M4OPT
@@ -35,7 +35,7 @@ m4opt schedule --mission ultrasat
 
 [Install CPLEX](https://m4opt.readthedocs.io/en/latest/install/cplex.html)
 
-## 4. Installing Additional Dependencies
+## 3. Installing Additional Dependencies
 
 ```bash
 pip install pandas
@@ -50,7 +50,7 @@ For more details, visit [SciPy Interpolation Guide](https://scipy.github.io/devd
 
 ---
 
-## 5. Verifying Installation
+## 4. Verifying Installation
 ```bash
 m4opt schedule --help
 ```
