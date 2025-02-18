@@ -39,6 +39,14 @@ m4opt schedule --mission ultrasat
 
 ```bash
 pip install pandas
+```
+
+If you are interested in the linear interpolation process, you can check `./linear-interpolation-process`.
+
+### Installing SciPy (Optional)
+We don't need it for our current process, but if required, you can install `scipy==1.13.1` using:
+
+```bash
 pip install scipy==1.13.1
 ```
 
