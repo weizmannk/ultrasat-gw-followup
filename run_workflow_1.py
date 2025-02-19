@@ -34,6 +34,7 @@ import logging
 import textwrap
 from pathlib import Path
 from m4opt.utils.console import status
+from joblib import Parallel, delayed
 
 
 def setup_logging(log_dir):
@@ -80,7 +81,9 @@ def run_localization_script(params_file, followup_dir):
         sys.exit(1)
 
 
-def process_batch_files(params_file, followup_dir, batches_dir, log_dir):
+def process_batch_files(
+    params_file, followup_dir, batches_dir, log_dir, number_of_cores, parallel=True
+):
     """
     Process each batch file using `./workflow/max-texp-by-sky-loc.py` and submit jobs to HTCondor.
 
@@ -100,11 +103,32 @@ def process_batch_files(params_file, followup_dir, batches_dir, log_dir):
         logging.error(f"Batches directory does not exist: {batches_dir}")
         sys.exit(1)
 
-    for batch_file in os.listdir(batches_dir):
-        batch_file_path = os.path.join(batches_dir, batch_file)
-        # logging.info(f"Processing batch file: {batch_file_path}")
+    if parallel:
+        with status("Submit the job on parallele nodes"):
+            commands = []
+            for batch_file in os.listdir(batches_dir):
+                batch_file_path = os.path.join(batches_dir, batch_file)
+                command = f"python3 -u {script_path} --params {params_file} --batch_file {batch_file_path}"
+                commands.append(command)
 
-        create_condor_submission(script_path, params_file, batch_file_path, log_dir)
+            # Parallel nodes submission process
+            parallel_run(commands, number_of_cores)
+
+    else:
+        with status(f"HTCondor job submission"):
+            for batch_file in os.listdir(batches_dir):
+                batch_file_path = os.path.join(batches_dir, batch_file)
+                # condor submission process
+                create_condor_submission(
+                    script_path, params_file, batch_file_path, log_dir
+                )
+
+
+# Parallel nodes submission
+def parallel_run(commands, number_of_cores=1):
+    Parallel(n_jobs=number_of_cores)(
+        delayed(os.system)(command) for command in commands
+    )
 
 
 def create_condor_submission(script_path, params_file, batch_file, log_dir):
@@ -176,28 +200,6 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def read_params_file(params_file):
-    """
-    Read and parse the parameters from the .ini file.
-
-    Parameters:
-        params_file (str): Path to the params file.
-
-    Returns:
-        dict: Dictionary containing parameter values.
-    """
-    config = configparser.ConfigParser()
-    config.read(params_file)
-
-    try:
-        params = {"save_directory": config.get("params", "save_directory")}
-        logging.debug(f"Parameters read from {params_file}: {params}")
-        return params
-    except (configparser.NoSectionError, configparser.NoOptionError, ValueError) as e:
-        logging.error(f"Error reading parameters from {params_file}: {e}")
-        sys.exit(1)
-
-
 def main():
     """
     Main function to execute the ULTRASAT workflow.
@@ -206,12 +208,15 @@ def main():
         args = parse_arguments()
 
         params_file = os.path.abspath(args.params)
+        config = configparser.ConfigParser()
+        config.read(params_file)
 
-        # Read parameters from the `.ini` file
-        params = read_params_file(params_file)
+        # Chech if parallel sumission is require
+        number_of_cores = config.getint("params", "number_of_cores", fallback=True)
+        parallel = config.getboolean("params", "parallel", fallback=False)
 
         # Create required directories
-        outdir = os.path.abspath(params["save_directory"])
+        outdir = os.path.abspath(config.get("params", "save_directory"))
         batches_dir = os.path.join(outdir, "batches")
         os.makedirs(batches_dir, exist_ok=True)
 
@@ -225,8 +230,9 @@ def main():
         with status("Down-selection Cutoff events"):
             run_localization_script(params_file, followup_dir)
 
-        with status(f"HTCondor job submission"):
-            process_batch_files(params_file, followup_dir, batches_dir, log_dir)
+        process_batch_files(
+            params_file, followup_dir, batches_dir, log_dir, number_of_cores, parallel
+        )
 
     logging.info("All batch files processed and submitted as Condor jobs.")
 

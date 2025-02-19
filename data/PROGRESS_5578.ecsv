@@ -1,0 +1,17 @@
+# %ECSV 1.0
+# ---
+# datatype:
+# - {name: id, datatype: int64}
+# - {name: has_incumbent, datatype: bool}
+# - {name: current_objective, datatype: float64}
+# - {name: best_bound, datatype: float64}
+# - {name: mip_gap, datatype: float64}
+# - {name: current_nb_iterations, datatype: int64}
+# - {name: current_nb_nodes, datatype: int64}
+# - {name: remaining_nb_nodes, datatype: int64}
+# - {name: time, datatype: float64}
+# - {name: det_time, datatype: float64}
+# schema: astropy-2.0
+id has_incumbent current_objective best_bound mip_gap current_nb_iterations current_nb_nodes remaining_nb_nodes time det_time
+6 True 9.551999007840976e-08 0.7410794934595243 7750255.959364131 15272 0 1 12.26078987121582 14682.615136146545
+10 True 0.73125679357003 0.7409133552140891 0.013205431700120973 21592 0 1 21.015159845352173 20918.400526046753

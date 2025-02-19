@@ -38,6 +38,7 @@ m4opt schedule --mission ultrasat
 ## 3. Installing Additional Dependencies
 
 ```bash
+pip install joblib
 pip install pandas
 ```
 

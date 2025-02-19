@@ -639,15 +639,22 @@ if __name__ == "__main__":
     N_batch = config.getint("params", "N_batch_preproc")
     bandpass = config.get("params", "bandpass")
     absmag_mean = config.getfloat("params", "absmag_mean")
-    astro_rate_median = config.getfloat("params", "astro_bns_median")
-    astro_rate_bounds = json.loads(config.get("params", "astro_bns_interval_90"))
+
+    astro_bns_median = config.getfloat("params", "astro_bns_median")
+    astro_nsbh_median = config.getfloat("params", "astro_nsbh_median")
+    astro_bns_interval_90 = json.loads(config.get("params", "astro_bns_interval_90"))
+    astro_rate_bounds = json.loads(config.get("params", "astro_nsbh_interval_90"))
     sim_rate = config.getfloat("params", "sim_bns_rate")
+
     run_duration = config.getfloat("params", "obs_duration")
     max_texp = config.getfloat("params", "max_texp")
     coverage_threshold = config.getfloat("params", "coverage_threshold", fallback=90)
     max_area = config.getfloat("params", "max_area")
     fov = config.getfloat("params", "fov")
-    split_pop = config.getboolean("params", "split_pop", fallback=False)
+
+    BNS = config.getboolean("params", "BNS", fallback=True)
+    NSBH = config.getboolean("params", "NSBH", fallback=True)
+    BBH = config.getboolean("params", "BBH", fallback=False)
 
     # Define paths
     coverage_plots_dir = os.path.join(outdir, "coverage_plots")
@@ -657,11 +664,22 @@ if __name__ == "__main__":
     os.makedirs(coverage_plots_dir, exist_ok=True)
     os.makedirs(statistics_dir, exist_ok=True)
 
-    if split_pop:
-        allsky_file = os.path.join(outdir, "allsky_bns_nsbh.csv")
-    else:
-        allsky_file = os.path.join(outdir, "allsky_bbh_bns_nsbh.csv")
+    # Filtering selected populations
+    populations = [
+        pop_name
+        for pop_name, pop_value in zip(["BNS", "NSBH", "BBH"], [BNS, NSBH, BBH])
+        if pop_value
+    ]
+    allsky_filename = f"allsky_{'_'.join(populations).lower()}"
 
+    if populations == ["NSBH"]:
+        astro_rate_median = astro_nsbh_median
+        astro_rate_bounds = astro_nsbh_interval_90
+    else:
+        astro_rate_median = astro_bns_median
+        astro_rate_bounds = astro_bns_interval_90
+
+    allsky_file = os.path.join(outdir, f"{allsky_filename}.csv")
     coverage_file = os.path.join(outdir, "allsky_coverage.csv")
 
     astro_rate = [astro_rate_median] + astro_rate_bounds

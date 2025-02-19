@@ -93,7 +93,7 @@ class ZenodoDownloader:
 
             file_url = file_to_download["links"]["self"]
             response = requests.get(file_url, stream=True)
-            response.raise_for_status()  # Raise HTTP errors if any
+            response.raise_for_status()
 
             file_size = int(response.headers.get("content-length", 0))
             with open(self.file_name, "wb") as file:

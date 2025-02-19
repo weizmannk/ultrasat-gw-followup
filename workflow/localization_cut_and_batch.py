@@ -48,15 +48,22 @@ def classify_populations(table, ns_max_mass=3.0):
     source_mass1 = table["mass1"] / zp1
     source_mass2 = table["mass2"] / zp1
 
-    BNS = (source_mass1 < ns_max_mass) & (source_mass2 < ns_max_mass)
-    NSBH = (source_mass1 >= ns_max_mass) & (source_mass2 < ns_max_mass)
-    BBH = (source_mass1 >= ns_max_mass) & (source_mass2 >= ns_max_mass)
+    bns_mask = (source_mass1 < ns_max_mass) & (source_mass2 < ns_max_mass)
+    nsbh_mask = (source_mass1 >= ns_max_mass) & (source_mass2 < ns_max_mass)
+    bbh_mask = (source_mass1 >= ns_max_mass) & (source_mass2 >= ns_max_mass)
 
-    return BNS, NSBH, BBH
+    return bns_mask, nsbh_mask, bbh_mask
 
 
 def downselect_and_batch(
-    allsky_file, injections_file, outdir, max_area=200, N_batch=20, split_pop=False
+    allsky_file,
+    injections_file,
+    outdir,
+    max_area=200,
+    N_batch=20,
+    BNS=True,
+    NSBH=True,
+    BBH=False,
 ):
     """
     Preprocesses ULTRASAT follow-up data for an LVK observing run scenario by filtering
@@ -72,8 +79,8 @@ def downselect_and_batch(
     :type max_area: float
     :param N_batch: Number of batch files desired
     :type N_batch: int
-    :param split_pop: Whether to split the population into BNS and NSBH only (excluding BBH)
-    :type split_pop: bool
+    :params BNS, NSBH, BBH: Whether to split the population into BNS or/and  NSBH only (excluding BBH)
+    :type BNS, NSBH, BBH: bool
     """
     try:
         # Create output directory if it doesn't exist
@@ -87,21 +94,53 @@ def downselect_and_batch(
             logging.error(f"Injections file '{injections_file}' does not exist.")
             sys.exit(1)
 
-        # Load events data
-        if split_pop:
-            with status(f"Using only BNS and NSBH populations. Excluded BBH."):
-                allsky = Table.read(allsky_file, format="ascii.fast_tab")
-                injections = Table.read(injections_file, format="ascii.fast_tab")
-                BNS, NSBH, _ = classify_populations(injections)
-                events = allsky[BNS | NSBH].to_pandas()
-                events.to_csv(os.path.join(outdir, "allsky_bns_nsbh.csv"), index=False)
+        allsky = Table.read(allsky_file, format="ascii.fast_tab")
+        injections = Table.read(injections_file, format="ascii.fast_tab")
 
-        else:
-            with status(f"Including all CBC populations (BNS, NSBH, and BBH)."):
-                events = pd.read_csv(allsky_file, delimiter="\t", skiprows=1)
+        # Filtering selected populations
+        populations = [
+            pop_name
+            for pop_name, pop_value in zip(["BNS", "NSBH", "BBH"], [BNS, NSBH, BBH])
+            if pop_value
+        ]
+
+        if not populations:
+            logging.error(
+                "All populations BNS, NSBH, and BBH are set to False. "
+                "Set at least one population to True to run the script."
+            )
+            sys.exit(1)
+
+        # Classifying populations and  Selecting populations
+
+        populations = [
+            pop_name
+            for pop_name, pop_value in zip(["BNS", "NSBH", "BBH"], [BNS, NSBH, BBH])
+            if pop_value
+        ]
+        allsky_filename = f"allsky_{'_'.join(populations).lower()}"
+
+        with status(f"Using populations: {', '.join(populations)}."):
+
+            bns_mask, nsbh_mask, bbh_mask = classify_populations(injections)
+
+            selected_masks = []
+            if "BNS" in populations:
+                selected_masks.append(bns_mask)
+            if "NSBH" in populations:
+                selected_masks.append(nsbh_mask)
+            if "BBH" in populations:
+                selected_masks.append(bbh_mask)
+
+            # Combining selected masks
+            if selected_masks:
+                combined_mask = np.logical_or.reduce(selected_masks)
+                events = allsky[combined_mask].to_pandas()
                 events.to_csv(
-                    os.path.join(outdir, "allsky_bbh_bns_nsbh.csv"), index=False
+                    os.path.join(outdir, f"{allsky_filename}.csv"), index=False
                 )
+            else:
+                logging.warning("No population selected after filtering.")
 
         # Check required columns
         required_columns = ["area(90)"]
@@ -177,7 +216,9 @@ if __name__ == "__main__":
         outdir = config.get("params", "save_directory")
         max_area = config.getfloat("params", "max_area", fallback=2000)
         N_batch = config.getint("params", "N_batch_preproc", fallback=20)
-        split_pop = config.getboolean("params", "split_pop", fallback=False)
+        BNS = config.getboolean("params", "BNS", fallback=True)
+        NSBH = config.getboolean("params", "NSBH", fallback=True)
+        BBH = config.getboolean("params", "BBH", fallback=False)
     except configparser.Error as config_error:
         logging.error(f"Error reading configuration: {config_error}")
         sys.exit(1)
@@ -191,5 +232,7 @@ if __name__ == "__main__":
         outdir,
         max_area=max_area,
         N_batch=N_batch,
-        split_pop=split_pop,
+        BNS=BNS,
+        NSBH=NSBH,
+        BBH=BBH,
     )

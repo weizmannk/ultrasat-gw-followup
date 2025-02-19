@@ -1,0 +1,138 @@
+# %ECSV 1.0
+# ---
+# datatype:
+# - {name: action, datatype: string, description: Action for the spacecraft}
+# - {name: start_time, datatype: string, description: Start time of segment}
+# - {name: duration, unit: s, datatype: float64, description: Duration of segment}
+# - {name: observer_location.x, unit: km, datatype: float64, description: Position of the spacecraft}
+# - {name: observer_location.y, unit: km, datatype: float64, description: Position of the spacecraft}
+# - {name: observer_location.z, unit: km, datatype: float64, description: Position of the spacecraft}
+# - {name: target_coord.ra, unit: deg, datatype: float64}
+# - {name: target_coord.dec, unit: deg, datatype: float64}
+# - {name: roll, unit: deg, datatype: float64, description: Position angle of the FOV}
+# meta: !!omap
+# - {command: /home/weizmann.kiendrebeogo/anaconda3/envs/new-m4opt/bin/m4opt schedule /home/weizmann.kiendrebeogo/M4OPT-ULTRASAT/ultrasat-gw-followup/runs_SNR-10/O5HLVK/farah/allsky/5578.fits
+#     /home/weizmann.kiendrebeogo/M4OPT-ULTRASAT/ultrasat-gw-followup/BNS_NSBH/O5HLVK/schedules/5578.ecsv --mission=ultrasat --bandpass=NUV
+#     --absmag-mean=-16.0 --absmag-stdev=1.0 '--exptime-min=300 s' '--exptime-max=14400.0 s' --snr=10 '--delay=15 min' '--deadline=24
+#     hr' --timelimit=20min --nside=128 --write-progress /home/weizmann.kiendrebeogo/M4OPT-ULTRASAT/ultrasat-gw-followup/BNS_NSBH/O5HLVK/progress/PROGRESS_5578.ecsv
+#     --jobs 0}
+# - {version: 0.1.dev511+ga1fb53c}
+# - args:
+#     absmag_mean: -16.0
+#     absmag_stdev: 1.0
+#     bandpass: NUV
+#     cutoff: null
+#     deadline: !astropy.units.Quantity
+#       unit: !astropy.units.Unit {unit: h}
+#       value: 24.0
+#     delay: !astropy.units.Quantity
+#       unit: &id002 !astropy.units.Unit {unit: min}
+#       value: 15.0
+#     exptime_max: !astropy.units.Quantity
+#       unit: &id001 !astropy.units.Unit {unit: s}
+#       value: 14400.0
+#     exptime_min: !astropy.units.Quantity
+#       unit: *id001
+#       value: 300.0
+#     mission: ultrasat
+#     nside: 128
+#     skymap: /home/weizmann.kiendrebeogo/M4OPT-ULTRASAT/ultrasat-gw-followup/runs_SNR-10/O5HLVK/farah/allsky/5578.fits
+#     snr: 10.0
+#     time_step: !astropy.units.Quantity
+#       unit: *id002
+#       value: 1.0
+#     visits: 2
+# - {objective_value: 0.7381468968831786}
+# - {best_bound: 0.7409133552140891}
+# - {solution_status: time limit exceeded}
+# - solution_time: !astropy.units.Quantity
+#     unit: *id001
+#     value: 1207.094624042511
+# - total_time:
+#     observe: !astropy.units.Quantity
+#       unit: *id001
+#       value: 51061.921361000816
+#     slack: !astropy.units.Quantity
+#       unit: *id001
+#       value: 34260.00000000002
+#     slew: !astropy.units.Quantity
+#       unit: *id001
+#       value: 178.07863899916046
+# - __serialized_columns__:
+#     duration:
+#       __class__: astropy.units.quantity.Quantity
+#       unit: !astropy.units.Unit {unit: s}
+#       value: !astropy.table.SerializedColumn {name: duration}
+#     observer_location:
+#       __class__: astropy.coordinates.earth.EarthLocation
+#       __info__: {description: Position of the spacecraft}
+#       ellipsoid: WGS84
+#       x: !astropy.table.SerializedColumn
+#         __class__: astropy.units.quantity.Quantity
+#         __info__: {description: Position of the spacecraft}
+#         unit: &id003 !astropy.units.Unit {unit: km}
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: observer_location.x}
+#       y: !astropy.table.SerializedColumn
+#         __class__: astropy.units.quantity.Quantity
+#         __info__: {description: Position of the spacecraft}
+#         unit: *id003
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: observer_location.y}
+#       z: !astropy.table.SerializedColumn
+#         __class__: astropy.units.quantity.Quantity
+#         __info__: {description: Position of the spacecraft}
+#         unit: *id003
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: observer_location.z}
+#     roll:
+#       __class__: astropy.units.quantity.Quantity
+#       __info__: {description: Position angle of the FOV}
+#       unit: &id004 !astropy.units.Unit {unit: deg}
+#       value: !astropy.table.SerializedColumn
+#         __class__: astropy.utils.masked.core.MaskedNDArray
+#         data: !astropy.table.SerializedColumn {name: roll}
+#     start_time:
+#       __class__: astropy.time.core.Time
+#       format: iso
+#       in_subfmt: '*'
+#       out_subfmt: '*'
+#       precision: 3
+#       scale: utc
+#       value: !astropy.table.SerializedColumn {name: start_time}
+#     target_coord:
+#       __class__: astropy.coordinates.sky_coordinate.SkyCoord
+#       __info__: {description: Coordinates of the center of the FOV}
+#       dec: !astropy.table.SerializedColumn
+#         __class__: astropy.coordinates.angles.core.Latitude
+#         unit: *id004
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: target_coord.dec}
+#       frame: icrs
+#       ra: !astropy.table.SerializedColumn
+#         __class__: astropy.coordinates.angles.core.Longitude
+#         unit: *id004
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: target_coord.ra}
+#         wrap_angle: !astropy.coordinates.Angle
+#           unit: *id004
+#           value: 360.0
+#       representation_type: spherical
+# schema: astropy-2.0
+action start_time duration observer_location.x observer_location.y observer_location.z target_coord.ra target_coord.dec roll
+observe "2012-08-04 18:06:11.626" 14400.000000000004 -9281.389598540183 -41092.25381116961 1587.5614396278277 213.74999999999997 14.477512185929925 104.24401913485048
+slew "2012-08-04 22:06:11.626" 39.89628276534277 "" "" "" "" "" ""
+observe "2012-08-04 22:06:51.522" 2735.6695835130995 -9170.410904076625 -40716.79423612942 5898.516064396816 213.75 4.780191847199159 106.46677256120638
+slew "2012-08-04 22:52:27.192" 34.453071730098316 "" "" "" "" "" ""
+observe "2012-08-04 22:53:01.645" 8395.291096987306 -9077.01886395643 -40710.64197614571 6085.453914996065 208.125 9.594068226860461 104.90103061906815
+slew "2012-08-05 01:12:56.936" 34.453071730098316 "" "" "" "" "" ""
+observe "2012-08-05 01:13:31.389" 2735.6695835130995 -8875.053899693714 -40888.01166001095 5151.709258493645 213.75 4.780191847199159 106.46677256120638
+slew "2012-08-05 01:59:07.058" 34.453071730098316 "" "" "" "" "" ""
+observe "2012-08-05 01:59:41.511" 8395.291096987306 -8870.675623663867 -40979.5657956966 4393.6721201347755 208.125 9.594068226860461 104.90103061906815
+slew "2012-08-05 04:19:36.803" 34.82314104352276 "" "" "" "" "" ""
+observe "2012-08-05 04:20:11.626" 14400.000000000004 -9051.79244204467 -41166.73816790159 1152.9586557199198 213.74999999999997 14.477512185929925 104.24401913485048

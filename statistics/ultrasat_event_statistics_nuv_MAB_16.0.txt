@@ -1,0 +1,13 @@
+Number of selected events is 64 ; this is 7.032967032967033 percent of the catalogue.
+The following predictions use a median (astrophysical rate / simulated rate) conversion factor of 0.1161.
+The uncertanty given includes the error contributions from lognormal astrophysical rate uncertainty and Poisson count statistics.
+Total number of events is $105.7^{+131.0}_{-59.1}$
+Predicted number of selected events (in 1.5 yr) is $7.4^{+9.2}_{-4.2}$
+Fraction of coverable events within ULTRSAT field of regard: 0.5333333333333333
+(i.e., fraction of events lost to some level of sun exclusion is 0.47)
+Exposure time statistics for selected events (in s):
+Median: 2323.163021208365 ; Min: 300.0 ; Max: 13324.339154747724
+Tiling statistics for selected events (tiles to 90% coverage of 90% localization):
+Median: 2.0 ; Min: 1 ; Max: 20
+Fraction of selected events covered in <=5 tiles is  0.90625
+This corresponds to $6.7^{+8.4}_{-3.8}$ predicted events in 1.5 yr (90% C.I.).
