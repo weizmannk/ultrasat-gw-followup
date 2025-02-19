@@ -169,6 +169,7 @@ def get_max_texp_by_sky_loc(
                             )
                             continue
 
+                    # FIXME , check if we nned np.arange(hpx.npix)  or selected_pixels
                     sky_coords = hpx.healpix_to_skycoord(selected_pixels)
                     skymap_selected = skymap_flat[selected_pixels]
 
