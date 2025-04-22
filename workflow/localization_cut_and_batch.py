@@ -22,6 +22,10 @@ from astropy.table import Table
 from astropy.cosmology import Planck15 as cosmo, z_at_value
 import astropy.units as u
 from m4opt.utils.console import status
+import warnings
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 
 # Configure logging
 logging.basicConfig(
@@ -120,27 +124,27 @@ def downselect_and_batch(
         ]
         allsky_filename = f"allsky_{'_'.join(populations).lower()}"
 
-        with status(f"Using populations: {', '.join(populations)}."):
+        logging.info(f"Using populations: {', '.join(populations)}.")
 
-            bns_mask, nsbh_mask, bbh_mask = classify_populations(injections)
+        bns_mask, nsbh_mask, bbh_mask = classify_populations(injections)
 
-            selected_masks = []
-            if "BNS" in populations:
-                selected_masks.append(bns_mask)
-            if "NSBH" in populations:
-                selected_masks.append(nsbh_mask)
-            if "BBH" in populations:
-                selected_masks.append(bbh_mask)
+        selected_masks = []
+        if "BNS" in populations:
+            selected_masks.append(bns_mask)
+        if "NSBH" in populations:
+            selected_masks.append(nsbh_mask)
+        if "BBH" in populations:
+            selected_masks.append(bbh_mask)
 
-            # Combining selected masks
-            if selected_masks:
-                combined_mask = np.logical_or.reduce(selected_masks)
-                events = allsky[combined_mask].to_pandas()
-                events.to_csv(
-                    os.path.join(outdir, f"{allsky_filename}.csv"), index=False
-                )
-            else:
-                logging.warning("No population selected after filtering.")
+        # Combining selected masks
+        if selected_masks:
+            combined_mask = np.logical_or.reduce(selected_masks)
+            events = allsky[combined_mask].to_pandas()
+
+            # print(f"event lenght "len{events}")
+            events.to_csv(os.path.join(outdir, f"{allsky_filename}.csv"), index=False)
+        else:
+            logging.warning("No population selected after filtering.")
 
         # Check required columns
         required_columns = ["area(90)"]
@@ -152,11 +156,11 @@ def downselect_and_batch(
             sys.exit(1)
 
         # Filter events by max_area
-        with status(f"Cutoff event area: {max_area} sq. deg."):
-            events_filtered = events[events["area(90)"] <= max_area]
-            if events_filtered.empty:
-                logging.info("No events found with area <= max_area.")
-                return
+        logging.info(f"Cutoff event area: {max_area} sq. deg.")
+        events_filtered = events[events["area(90)"] <= max_area]
+        if events_filtered.empty:
+            logging.info("No events found with area <= max_area.")
+            return
 
         percent_filtered = len(events_filtered) / len(events) * 100
 
@@ -176,15 +180,13 @@ def downselect_and_batch(
         os.makedirs(batch_dir, exist_ok=True)
 
         # Split filtered events into batches
-        with status(f"Batching process"):
-            batches = np.array_split(events_filtered, N_batch)
-            for i, batch in enumerate(batches):
-                batch_filename = f"allsky_batch{i}.csv"
-                batch_path = os.path.join(batch_dir, batch_filename)
-                batch.to_csv(batch_path, index=False)  # sep=',')
-                logging.info(
-                    f"Batch file created: {batch_path} with {len(batch)} events."
-                )
+        logging.info("Batching process")
+        batches = np.array_split(events_filtered, N_batch)
+        for i, batch in enumerate(batches):
+            batch_filename = f"allsky_batch{i}.csv"
+            batch_path = os.path.join(batch_dir, batch_filename)
+            batch.to_csv(batch_path, index=False)  # sep=',')
+            logging.info(f"Batch file created: {batch_path} with {len(batch)} events.")
 
         logging.info("Batching process completed successfully.")
 

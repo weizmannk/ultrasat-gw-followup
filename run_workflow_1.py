@@ -33,8 +33,11 @@ import argparse
 import logging
 import textwrap
 from pathlib import Path
-from m4opt.utils.console import status
 from joblib import Parallel, delayed
+
+import warnings
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 def setup_logging(log_dir):
@@ -104,28 +107,28 @@ def process_batch_files(
         sys.exit(1)
 
     if parallel:
-        with status("Submit the job on parallele nodes"):
-            commands = []
-            for batch_file in os.listdir(batches_dir):
-                batch_file_path = os.path.join(batches_dir, batch_file)
-                command = f"python3 -u {script_path} --params {params_file} --batch_file {batch_file_path}"
-                commands.append(command)
+        print("Submit the job on parallele nodes")
+        commands = []
+        for batch_file in os.listdir(batches_dir):
+            batch_file_path = os.path.join(batches_dir, batch_file)
+            command = f"python3 -u {script_path} --params {params_file} --batch_file {batch_file_path}"
+            print(f"Command: {command}")
+            commands.append(command)
 
-            # Parallel nodes submission process
-            parallel_run(commands, number_of_cores)
+        # Parallel nodes submission process
+        parallel_run(commands, number_of_cores)
 
     else:
-        with status(f"HTCondor job submission"):
-            for batch_file in os.listdir(batches_dir):
-                batch_file_path = os.path.join(batches_dir, batch_file)
-                # condor submission process
-                create_condor_submission(
-                    script_path, params_file, batch_file_path, log_dir
-                )
+        print(f"HTCondor job submission")
+        for batch_file in os.listdir(batches_dir):
+            batch_file_path = os.path.join(batches_dir, batch_file)
+            # condor submission process
+            create_condor_submission(script_path, params_file, batch_file_path, log_dir)
 
 
 # Parallel nodes submission
 def parallel_run(commands, number_of_cores=1):
+    print(f"Submit the job on {number_of_cores} nodes")
     Parallel(n_jobs=number_of_cores)(
         delayed(os.system)(command) for command in commands
     )
@@ -204,37 +207,40 @@ def main():
     """
     Main function to execute the ULTRASAT workflow.
     """
-    with status("Starting ULTRASAT workflow N°1."):
-        args = parse_arguments()
+    print("Starting ULTRASAT workflow N°1.")
+    args = parse_arguments()
 
-        params_file = os.path.abspath(args.params)
-        config = configparser.ConfigParser()
-        config.read(params_file)
+    params_file = os.path.abspath(args.params)
+    config = configparser.ConfigParser()
+    config.read(params_file)
 
-        # Chech if parallel sumission is require
-        number_of_cores = config.getint("params", "number_of_cores", fallback=True)
-        parallel = config.getboolean("params", "parallel", fallback=False)
+    # Chech if parallel sumission is require
+    number_of_cores = config.getint("params", "number_of_cores", fallback=True)
+    parallel = config.getboolean("params", "parallel", fallback=False)
 
-        # Create required directories
-        outdir = os.path.abspath(config.get("params", "save_directory"))
-        batches_dir = os.path.join(outdir, "batches")
-        os.makedirs(batches_dir, exist_ok=True)
+    # Create required directories
+    outdir = os.path.abspath(config.get("params", "save_directory"))
+    batches_dir = os.path.join(outdir, "batches")
+    os.makedirs(batches_dir, exist_ok=True)
 
-        log_dir = os.path.join(outdir, args.log_dir)
-        os.makedirs(log_dir, exist_ok=True)
-        setup_logging(log_dir)
+    log_dir = os.path.join(outdir, args.log_dir)
+    os.makedirs(log_dir, exist_ok=True)
+    setup_logging(log_dir)
 
-        followup_dir = os.path.dirname(params_file)
+    followup_dir = os.path.dirname(params_file)
 
-        # Execute workflow steps
-        with status("Down-selection Cutoff events"):
-            run_localization_script(params_file, followup_dir)
+    # Execute workflow steps
+    print("Down-selection Cutoff events")
+    run_localization_script(params_file, followup_dir)
 
-        process_batch_files(
-            params_file, followup_dir, batches_dir, log_dir, number_of_cores, parallel
-        )
+    process_batch_files(
+        params_file, followup_dir, batches_dir, log_dir, number_of_cores, parallel
+    )
 
-    logging.info("All batch files processed and submitted as Condor jobs.")
+    if parallel:
+        logging.info("All batch files processed in parallel.")
+    else:
+        logging.info("All batch files processed in HT Condor.")
 
 
 if __name__ == "__main__":

@@ -423,7 +423,10 @@ def main():
             parallel,
         )
 
-    if not parallel:
+    if parallel:
+        logging.info("All batch files processed in parallel nodes.")
+
+    else:
         logging.info("All batch files processed and submitted as Condor jobs.")
 
 

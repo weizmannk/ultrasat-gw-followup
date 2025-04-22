@@ -42,7 +42,8 @@ from scipy import stats
 
 from m4opt.utils.console import status
 from m4opt.missions import ultrasat
-from m4opt.synphot import observing, DustExtinction, TabularScaleFactor
+from m4opt.synphot import observing, TabularScaleFactor
+from m4opt.synphot.extinction import DustExtinction
 import synphot
 
 
@@ -140,7 +141,7 @@ def get_max_texp_by_sky_loc(
 
                 with status(f"Propagating orbit for event {file_id}"):
                     obstime = event_time + u.Quantity(delay)
-                    observer_location = ultrasat.orbit(obstime).earth_location
+                    observer_location = ultrasat.observer_location(obstime)
 
                 with status(f"Computing credible region for event {file_id}"):
                     # Compute the credible levels for each pixel in the sky map by sorting
