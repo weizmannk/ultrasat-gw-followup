@@ -32,7 +32,7 @@ import logging
 import pandas as pd
 from pathlib import Path
 from joblib import Parallel, delayed
-
+import shutil
 from m4opt.utils.console import status
 
 
@@ -89,7 +89,7 @@ def process_batch_files(
     prog_dir,
     params,
     number_of_cores,
-    parallel=True,
+    backend
 ):
     """
     Process all batch files and submit them to HTCondor.
@@ -98,7 +98,7 @@ def process_batch_files(
         logging.error(f"Batches directory does not exist: {batches_dir}")
         sys.exit(1)
 
-    if parallel:
+    if backend == "parallel":
         with status("Submit the job on parallele nodes"):
             commands = paralle_process(
                 batches_dir, log_dir, sched_dir, skymap_dir, prog_dir, params
@@ -108,13 +108,85 @@ def process_batch_files(
             print("Number of jobs remaining... %d." % len(commands))
             parallel_run(commands, number_of_cores)
 
-    else:
+    elif backend == "condor":
         for batch_file in os.listdir(batches_dir):
             with status(f"Submitting Condor job for {batch_file}"):
                 batch_file_path = os.path.join(batches_dir, batch_file)
                 create_condor_submission(
                     batch_file_path, log_dir, sched_dir, skymap_dir, prog_dir, params
                 )
+
+    elif backend == "slurm":
+        if shutil.which("sbatch") is None:
+            logging.warning("SLURM not available on this system. Skipping SLURM submission.")
+            return
+        for batch_file in os.listdir(batches_dir):
+            with status(f"Submitting SLURM job for {batch_file}"):
+                batch_file_path = os.path.join(batches_dir, batch_file)
+                create_slurm_submission(
+                    batch_file_path, log_dir, sched_dir, skymap_dir, prog_dir, params
+                )
+
+def create_slurm_submission(batch_file_path, log_dir, sched_dir, skymap_dir, prog_dir, params):
+    try:
+        m4opt_path = subprocess.check_output(["which", "m4opt"]).decode().strip()
+        if not os.path.exists(m4opt_path):
+            raise FileNotFoundError("m4opt executable not found.")
+    except Exception:
+        logging.error("m4opt executable not found in PATH.")
+        return
+
+    batch_filename = os.path.basename(batch_file_path).replace(".csv", "")
+
+    try:
+        df = pd.read_csv(batch_file_path)
+    except Exception as e:
+        logging.error(f"Failed to read batch file {batch_file_path}: {e}")
+        return
+
+    for _, row in df.iterrows():
+        try:
+            event_id = int(row["event_id"])
+        except (KeyError, ValueError) as e:
+            logging.error(f"Invalid data in batch file {batch_file_path}: {e}")
+            continue
+
+        skymap_file = os.path.join(skymap_dir, f"{event_id}.fits")
+        sched_file = os.path.join(sched_dir, f"{event_id}.ecsv")
+        prog_file = os.path.join(prog_dir, f"PROGRESS_{event_id}.ecsv")
+        wrapper_script = os.path.join(log_dir, f"slurm_wrapper_{event_id}.sh")
+
+        wrapper_content = f"""#!/bin/bash
+#SBATCH --job-name=ULTRASAT_{event_id}
+#SBATCH --output={log_dir}/{event_id}.out
+#SBATCH --error={log_dir}/{event_id}.err
+#SBATCH --partition=cpu
+#SBATCH --account=bcrv-delta-cpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=10G
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=leggi014@umn.edu
+#SBATCH --time=12:00:00
+
+export OMP_NUM_THREADS=1
+
+{m4opt_path} schedule {skymap_file} {sched_file} \\
+  --mission={params["mission"]} --bandpass={params["bandpass"].upper()} \\
+  --absmag-mean={params["absmag_mean"]} --absmag-stdev={params["absmag_stdev"]} \\
+  --exptime-min='{params["min_texp"]} s' --exptime-max='{params["max_texp"]} s' \\
+  --snr={params["snr"]} --delay='{params["delay"]}' --deadline='{params["deadline"]}' \\
+  --timelimit='20min' --nside={params["nside"]} --write-progress {prog_file} --jobs {params["job"]}
+"""
+
+        try:
+            with open(wrapper_script, "w") as f:
+                f.write(wrapper_content)
+            os.chmod(wrapper_script, 0o755)
+            subprocess.run(["sbatch", wrapper_script], check=True)
+        except Exception as e:
+            logging.error(f"Failed to submit SLURM job for {event_id}: {e}")
 
 
 # Parallel nodes submission
@@ -361,7 +433,7 @@ def read_params_file(params_file):
             "number_of_cores": config.getint(
                 "params", "number_of_cores", fallback=True
             ),
-            "parallel": config.getboolean("params", "parallel", fallback=False),
+            "backend": config.get("params", "backend", fallback="parallel"),
         }
 
         logging.debug(f"Parameters read from {params_file}: {params}")
@@ -389,7 +461,8 @@ def main():
 
     params = read_params_file(params_file)
     number_of_cores = params["number_of_cores"]
-    parallel = params["parallel"]
+    backend = params["backend"]
+    # Chech the backend submission method
 
     obs_scenario_dir = os.path.abspath(params["obs_scenario_dir"])
     outdir = os.path.abspath(params["save_directory"])
@@ -420,14 +493,17 @@ def main():
             prog_dir,
             params,
             number_of_cores,
-            parallel,
+            backend,
         )
 
-    if parallel:
-        logging.info("All batch files processed in parallel nodes.")
-
+    if backend == "parallel":
+        logging.info("All batch files processed in parallel.")
+    elif backend == "slurm":
+        logging.info("All batch files processed in SLURM.")
+    elif backend == "condor":
+        logging.info("All batch files processed in HT Condor.")
     else:
-        logging.info("All batch files processed and submitted as Condor jobs.")
+        logging.error("Unknown backend specified in the config file.")
 
 
 if __name__ == "__main__":
