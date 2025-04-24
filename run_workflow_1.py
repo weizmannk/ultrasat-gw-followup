@@ -255,9 +255,11 @@ def main():
     config = configparser.ConfigParser()
     config.read(params_file)
 
-    # Chech the backend submission method
+    
     number_of_cores = config.getint("params", "number_of_cores", fallback=True)
-    backend = config.getboolean("params", "backend", fallback=False)
+    
+    # Chech the backend submission method
+    backend = config.get("params", "backend", fallback="parallel")
 
     # Create required directories
     outdir = os.path.abspath(config.get("params", "save_directory"))
