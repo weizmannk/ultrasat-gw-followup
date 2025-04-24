@@ -34,6 +34,7 @@ import logging
 import textwrap
 from pathlib import Path
 from joblib import Parallel, delayed
+import shutil
 
 import warnings
 
@@ -126,10 +127,15 @@ def process_batch_files(
             create_condor_submission(script_path, params_file, batch_file_path, log_dir)
             
     elif backend == "slurm":
-        print("SLURM job submission")
-        for batch_file in os.listdir(batches_dir):
-            batch_file_path = os.path.join(batches_dir, batch_file)
-            create_slurm_submission(script_path, params_file, batch_file_path, log_dir)
+        if shutil.which("sbatch") is None:
+            logging.warning("SLURM not available on this cluster. Skipping SLURM submission.")
+            return 
+        else:
+            print("SLURM job submission")
+            for batch_file in os.listdir(batches_dir):
+                batch_file_path = os.path.join(batches_dir, batch_file)
+                create_slurm_submission(script_path, params_file, batch_file_path, log_dir)
+
 
     else:
         print("Unknown backend: use 'condor', 'parallel', or 'dask'")
