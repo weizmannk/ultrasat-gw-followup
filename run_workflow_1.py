@@ -85,7 +85,7 @@ def run_localization_script(params_file, followup_dir):
 
 
 def process_batch_files(
-    params_file, followup_dir, batches_dir, log_dir, number_of_cores, parallel=True
+    params_file, followup_dir, batches_dir, log_dir, number_of_cores, backend="parallel"
 ):
     """
     Process each batch file using `./workflow/max-texp-by-sky-loc.py` and submit jobs to HTCondor.
@@ -106,7 +106,7 @@ def process_batch_files(
         logging.error(f"Batches directory does not exist: {batches_dir}")
         sys.exit(1)
 
-    if parallel:
+    if backend == "parallel":
         print("Submit the job on parallele nodes")
         commands = []
         for batch_file in os.listdir(batches_dir):
@@ -118,13 +118,54 @@ def process_batch_files(
         # Parallel nodes submission process
         parallel_run(commands, number_of_cores)
 
-    else:
+    elif backend == "condor":
         print(f"HTCondor job submission")
         for batch_file in os.listdir(batches_dir):
             batch_file_path = os.path.join(batches_dir, batch_file)
             # condor submission process
             create_condor_submission(script_path, params_file, batch_file_path, log_dir)
+            
+    elif backend == "slurm":
+        print("SLURM job submission")
+        for batch_file in os.listdir(batches_dir):
+            batch_file_path = os.path.join(batches_dir, batch_file)
+            create_slurm_submission(script_path, params_file, batch_file_path, log_dir)
 
+    else:
+        print("Unknown backend: use 'condor', 'parallel', or 'dask'")
+        sys.exit(1)
+
+# SLURM job submission
+def create_slurm_submission(script_path, params_file, batch_file, log_dir):
+    batch_filename = os.path.basename(batch_file).replace(".csv", "")
+    job_name = f"ULTRASAT_{batch_filename}"
+    slurm_script = textwrap.dedent(f"""\
+        #!/bin/bash
+        #SBATCH --job-name={job_name}
+        #SBATCH --output={log_dir}/{batch_filename}.out
+        #SBATCH --error={log_dir}/{batch_filename}.err
+        #SBATCH --partition=cpu
+        #SBATCH --account=bcrv-delta-cpu
+        #SBATCH --nodes=1
+        #SBATCH --ntasks=1
+        #SBATCH --cpus-per-task=1
+        #SBATCH --mem=10G
+        #SBATCH --mail-type=FAIL
+        #SBATCH --mail-user=leggi014@umn.edu
+        #SBATCH --time=12:00:00
+
+        export OMP_NUM_THREADS=1
+        python3 -u {script_path} --params {params_file} --batch_file {batch_file}
+    """)
+
+    script_path_slurm = os.path.join(log_dir, f"slurm_{batch_filename}.sh")
+    with open(script_path_slurm, "w") as f:
+        f.write(slurm_script)
+
+    try:
+        subprocess.run(["sbatch", script_path_slurm], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"SLURM submission failed for {batch_file}: {e}")
 
 # Parallel nodes submission
 def parallel_run(commands, number_of_cores=1):
@@ -214,9 +255,9 @@ def main():
     config = configparser.ConfigParser()
     config.read(params_file)
 
-    # Chech if parallel sumission is require
+    # Chech the backend submission method
     number_of_cores = config.getint("params", "number_of_cores", fallback=True)
-    parallel = config.getboolean("params", "parallel", fallback=False)
+    backend = config.getboolean("params", "backend", fallback=False)
 
     # Create required directories
     outdir = os.path.abspath(config.get("params", "save_directory"))
@@ -234,13 +275,17 @@ def main():
     run_localization_script(params_file, followup_dir)
 
     process_batch_files(
-        params_file, followup_dir, batches_dir, log_dir, number_of_cores, parallel
+        params_file, followup_dir, batches_dir, log_dir, number_of_cores, backend
     )
 
-    if parallel:
+    if backend == "parallel":
         logging.info("All batch files processed in parallel.")
-    else:
+    elif backend == "slurm":
+        logging.info("All batch files processed in SLURM.")
+    elif backend == "condor":
         logging.info("All batch files processed in HT Condor.")
+    else:
+        logging.error("Unknown backend specified in the config file.")
 
 
 if __name__ == "__main__":
