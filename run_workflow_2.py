@@ -120,9 +120,14 @@ def process_batch_files(
         if shutil.which("sbatch") is None:
             logging.warning("SLURM not available on this system. Skipping SLURM submission.")
             return
-        for batch_file in os.listdir(batches_dir):
-            with status(f"Submitting SLURM job for {batch_file}"):
-                batch_file_path = os.path.join(batches_dir, batch_file)
+
+        for batch_file in sorted(os.listdir(batches_dir)):
+            if not batch_file.endswith(".csv"):
+                continue  # skip non-csv files
+
+            batch_file_path = os.path.join(batches_dir, batch_file)
+
+            with status(f"Submitting SLURM array job for {batch_file}"):
                 create_slurm_submission(
                     batch_file_path, log_dir, sched_dir, skymap_dir, prog_dir, params
                 )
@@ -140,26 +145,24 @@ def create_slurm_submission(batch_file_path, log_dir, sched_dir, skymap_dir, pro
 
     try:
         df = pd.read_csv(batch_file_path)
+        event_ids = df["event_id"].astype(int).tolist()
     except Exception as e:
         logging.error(f"Failed to read batch file {batch_file_path}: {e}")
         return
 
-    for _, row in df.iterrows():
-        try:
-            event_id = int(row["event_id"])
-        except (KeyError, ValueError) as e:
-            logging.error(f"Invalid data in batch file {batch_file_path}: {e}")
-            continue
+    # Write event IDs to a temp file
+    event_id_list_path = os.path.join(log_dir, f"{batch_filename}_event_ids.txt")
+    with open(event_id_list_path, "w") as f:
+        for eid in event_ids:
+            f.write(f"{eid}\n")
 
-        skymap_file = os.path.join(skymap_dir, f"{event_id}.fits")
-        sched_file = os.path.join(sched_dir, f"{event_id}.ecsv")
-        prog_file = os.path.join(prog_dir, f"PROGRESS_{event_id}.ecsv")
-        wrapper_script = os.path.join(log_dir, f"slurm_wrapper_{event_id}.sh")
+    slurm_script_path = os.path.join(log_dir, f"slurm_array_{batch_filename}.sh")
+    array_length = len(event_ids)
 
-        wrapper_content = f"""#!/bin/bash
-#SBATCH --job-name=ULTRASAT_{event_id}
-#SBATCH --output={log_dir}/{event_id}.out
-#SBATCH --error={log_dir}/{event_id}.err
+    slurm_script = f"""#!/bin/bash
+#SBATCH --job-name=ULTRASAT_{batch_filename}
+#SBATCH --output={log_dir}/%x_%A_%a.out
+#SBATCH --error={log_dir}/%x_%A_%a.err
 #SBATCH --partition=cpu
 #SBATCH --account=bcrv-delta-cpu
 #SBATCH --nodes=1
@@ -169,25 +172,31 @@ def create_slurm_submission(batch_file_path, log_dir, sched_dir, skymap_dir, pro
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=leggi014@umn.edu
 #SBATCH --time=12:00:00
+#SBATCH --array=0-{array_length - 1}
 
 export OMP_NUM_THREADS=1
 
-{m4opt_path} schedule {skymap_file} {sched_file} \\
+event_id=$(sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" {event_id_list_path})
+
+skymap_file={skymap_dir}/$event_id.fits
+sched_file={sched_dir}/$event_id.ecsv
+prog_file={prog_dir}/PROGRESS_$event_id.ecsv
+
+{m4opt_path} schedule $skymap_file $sched_file \\
   --mission={params["mission"]} --bandpass={params["bandpass"].upper()} \\
   --absmag-mean={params["absmag_mean"]} --absmag-stdev={params["absmag_stdev"]} \\
   --exptime-min='{params["min_texp"]} s' --exptime-max='{params["max_texp"]} s' \\
   --snr={params["snr"]} --delay='{params["delay"]}' --deadline='{params["deadline"]}' \\
-  --timelimit='20min' --nside={params["nside"]} --write-progress {prog_file} --jobs {params["job"]}
+  --timelimit='20min' --nside={params["nside"]} --write-progress $prog_file --jobs {params["job"]}
 """
 
-        try:
-            with open(wrapper_script, "w") as f:
-                f.write(wrapper_content)
-            os.chmod(wrapper_script, 0o755)
-            subprocess.run(["sbatch", wrapper_script], check=True)
-        except Exception as e:
-            logging.error(f"Failed to submit SLURM job for {event_id}: {e}")
-
+    try:
+        with open(slurm_script_path, "w") as f:
+            f.write(slurm_script)
+        os.chmod(slurm_script_path, 0o755)
+        subprocess.run(["sbatch", slurm_script_path], check=True)
+    except Exception as e:
+        logging.error(f"Failed to submit SLURM array job for {batch_file_path}: {e}")
 
 # Parallel nodes submission
 def parallel_run(commands, number_of_cores=1):

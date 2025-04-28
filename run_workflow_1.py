@@ -125,31 +125,39 @@ def process_batch_files(
             batch_file_path = os.path.join(batches_dir, batch_file)
             # condor submission process
             create_condor_submission(script_path, params_file, batch_file_path, log_dir)
-            
+
     elif backend == "slurm":
         if shutil.which("sbatch") is None:
             logging.warning("SLURM not available on this cluster. Skipping SLURM submission.")
-            return 
+            return
         else:
             print("SLURM job submission")
-            for batch_file in os.listdir(batches_dir):
-                batch_file_path = os.path.join(batches_dir, batch_file)
-                create_slurm_submission(script_path, params_file, batch_file_path, log_dir)
-
+            batch_files = [
+                os.path.join(batches_dir, bf)
+                for bf in sorted(os.listdir(batches_dir))
+                if bf.endswith(".csv")
+            ]
+            create_slurm_submission(script_path, params_file, batch_files, log_dir)
 
     else:
         print("Unknown backend: use 'condor', 'parallel', or 'dask'")
         sys.exit(1)
 
 # SLURM job submission
-def create_slurm_submission(script_path, params_file, batch_file, log_dir):
-    batch_filename = os.path.basename(batch_file).replace(".csv", "")
-    job_name = f"ULTRASAT_{batch_filename}"
+def create_slurm_submission(script_path, params_file, batch_files, log_dir):
+    array_length = len(batch_files)
+    batch_file_list_path = os.path.join(log_dir, "batch_files_list.txt")
+
+    # Write batch file paths to a text file
+    with open(batch_file_list_path, "w") as f:
+        for bf in batch_files:
+            f.write(bf + "\n")
+
     slurm_script = textwrap.dedent(f"""\
         #!/bin/bash
-        #SBATCH --job-name={job_name}
-        #SBATCH --output={log_dir}/{batch_filename}.out
-        #SBATCH --error={log_dir}/{batch_filename}.err
+        #SBATCH --job-name=ULTRASAT_array
+        #SBATCH --output={log_dir}/array_%A_%a.out
+        #SBATCH --error={log_dir}/array_%A_%a.err
         #SBATCH --partition=cpu
         #SBATCH --account=bcrv-delta-cpu
         #SBATCH --nodes=1
@@ -159,19 +167,24 @@ def create_slurm_submission(script_path, params_file, batch_file, log_dir):
         #SBATCH --mail-type=FAIL
         #SBATCH --mail-user=leggi014@umn.edu
         #SBATCH --time=12:00:00
+        #SBATCH --array=0-{array_length - 1}
 
         export OMP_NUM_THREADS=1
-        python3 -u {script_path} --params {params_file} --batch_file {batch_file}
+
+        batch_file=$(sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" {batch_file_list_path})
+        echo "Running batch file: $batch_file"
+
+        python3 -u {script_path} --params {params_file} --batch_file "$batch_file"
     """)
 
-    script_path_slurm = os.path.join(log_dir, f"slurm_{batch_filename}.sh")
-    with open(script_path_slurm, "w") as f:
+    slurm_array_path = os.path.join(log_dir, "slurm_array.sh")
+    with open(slurm_array_path, "w") as f:
         f.write(slurm_script)
 
     try:
-        subprocess.run(["sbatch", script_path_slurm], check=True)
+        subprocess.run(["sbatch", slurm_array_path], check=True)
     except subprocess.CalledProcessError as e:
-        logging.error(f"SLURM submission failed for {batch_file}: {e}")
+        logging.error(f"SLURM array submission failed: {e}")
 
 # Parallel nodes submission
 def parallel_run(commands, number_of_cores=1):
