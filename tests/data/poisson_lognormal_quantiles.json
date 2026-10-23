@@ -1,0 +1,25 @@
+{
+  "description": "Reference output of ultrasat_gw_followup.probability.rate.poisson_lognormal_rate_quantiles. For a log-normal prior on a Poisson rate with mu and sigma, this is the (continuous) event count k such that the marginal CDF equals each probability in `p`. Regenerate with tests/data/make_rate_fixture.py only after a deliberate, reviewed change to the algorithm.",
+  "generated_with": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3"
+  },
+  "inputs": {
+    "mu": 2.0,
+    "sigma": 0.5,
+    "p": [
+      0.05,
+      0.16,
+      0.5,
+      0.84,
+      0.95
+    ]
+  },
+  "quantiles": [
+    1.4154856032927108,
+    3.0997362100714243,
+    6.826035049600926,
+    12.536302397099007,
+    17.85981858492643
+  ]
+}

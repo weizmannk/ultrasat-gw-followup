@@ -1,0 +1,88 @@
+[project]
+name = "ultrasat-gw-followup"
+dynamic = ["version"]
+authors = [
+    {name = "Ramodgwendé Weizmann Kiendrébéogo", email = "kiend.weizman7@gmail.com"},
+]
+license = "BSD-3-Clause"
+description = "Early UV follow-up of gravitational wave events with ULTRASAT"
+readme = "README.md"
+requires-python = ">=3.12, <3.15"
+dependencies = [
+    # Pinned: the paper's schedules, their metadata and the CLI flags used by
+    # the scheduler wrapper are those of this release.
+    "m4opt == 4.0.0",
+    "dask",
+    "dask-jobqueue",
+    "distributed",
+    "joblib",
+    "matplotlib",
+    "requests",
+    "tqdm",
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-astropy",
+]
+figures = [
+    "ipykernel",
+    "jupyter",
+]
+dev = [
+    "pre-commit",
+    "ruff",
+    "ultrasat-gw-followup[test,figures]",
+]
+
+[project.scripts]
+ugf-download = "ultrasat_gw_followup.workflow.download:main"
+ugf-unpacker = "ultrasat_gw_followup.workflow.unpacker:main"
+ugf-scheduler = "ultrasat_gw_followup.workflow.scheduler:main"
+ugf-postprocess = "ultrasat_gw_followup.workflow.postprocess:main"
+ugf-check-runs = "ultrasat_gw_followup.workflow.check_runs:main"
+ugf-make-redo = "ultrasat_gw_followup.workflow.make_redo:main"
+ugf-paper-results = "ultrasat_gw_followup.workflow.paper_results:main"
+
+[project.urls]
+"GitHub" = "https://github.com/weizmannk/ultrasat-gw-followup"
+"Bug Tracker" = "https://github.com/weizmannk/ultrasat-gw-followup/issues"
+"Data" = "https://doi.org/10.5281/zenodo.22550048"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "ultrasat_gw_followup.__version__"}
+
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+astropy_header = true
+doctest_optionflags = ["FLOAT_CMP", "IGNORE_EXCEPTION_DETAIL"]
+
+[tool.ruff]
+src = ["src", "scripts", "tests"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ultrasat_gw_followup"]

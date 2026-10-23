@@ -1,14 +1,49 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+#
+# The result tables and the test fixtures are generated scientific data. Hooks
+# that rewrite files are kept away from them, so that a commit can never alter
+# a number.
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.2.0
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
     hooks:
-    -   id: trailing-whitespace
-    -   id: end-of-file-fixer
-    -   id: check-yaml
-    -   id: check-added-large-files
--   repo: https://github.com/psf/black
-    rev: 22.10.0
+      - id: check-case-conflict
+        # Names that would collide on a case-insensitive filesystem.
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+        exclude: ^(results/|tests/data/)
+      - id: trailing-whitespace
+        # NOTE: use "|-" (not "|"): a plain block scalar appends a newline to
+        # the regex, which breaks re.search and silently disables the exclusion.
+        exclude: |-
+          ^(results/|tests/data/)
+        exclude_types: [python]  # covered by ruff W291
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.2
     hooks:
-    -   id: black
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+        # Also formats the notebook.
+
+  # Strip output from Jupyter notebooks.
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      - id: codespell
+        args: ["--ignore-words=.codespell-ignore-words"]
+        exclude: ^(results/|tests/data/|\.pre-commit-config\.yaml$)
+        additional_dependencies:
+          - tomli

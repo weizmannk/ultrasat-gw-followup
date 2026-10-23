@@ -1,120 +1,195 @@
-# ULTRASAT Follow-up Pipeline for Electromagnetic Counterparts of Gravitational Waves
+# Early UV follow-up of gravitational wave events with ULTRASAT
 
+Everything needed to reproduce the paper, from the Zenodo archive to the
+numbers, the table and the figure: download, unpack, schedule, post-process,
+report.
 
-## Overview
-This pipeline automates the scheduling and follow-up of **gravitational wave (GW) events** using the **ULTRASAT** mission. It processes GW localization maps, filters viable events, determines optimal exposure times, and submits observation jobs via **HTCondor**.
+Three runs are compared, one configuration file each:
 
----
+| Run | Mission | Sky grid | Kilonova `absmag_mean` | Configuration |
+|---|---|---|---|---|
+| LCS | ULTRASAT | `non-overlap` | −16.0 | `config/ultrasat_lcs.ini` |
+| AllSS | ULTRASAT | `allsky` | −16.0 | `config/ultrasat_allsky.ini` |
+| UVEX | UVEX | single grid | −15.6 | `config/uvex.ini` |
+
+Everything else is shared: SNR 5, two visits at least 30 min apart, exposures
+from 300 s, observations between 15 min and 6 h after the merger, objective
+cutoff 0.1, `nside` 128, runs O5a, O5b and O5c.
+
 ## Installation
 
-### Installing M4OPT
-M4OPT is use for **mission optimization and scheduling**.
-Follow the installation instructions:
+With [uv](https://docs.astral.sh/uv/):
 
-[M4OPT Documentation](doc/index.md)
-
----
-## **Download the Observing Scenarios for O5 and O6**
-
-- **Observing scenarios run O5 and O6 using an SNR threshold of 10:**
-  [Zenodo Record](https://zenodo.org/records/14585837)
-
-You can easily download it using a Python script by running the following command:
-
-```
-python3 zenodo_downloader.py
-```
-This is a tool for interacting with the Zenodo API, facilitating the download of files based on DOI. The script retrieves the latest version DOI associated with a provided permanent DOI and downloads the corresponding file from Zenodo.
-
-Or use wget:
-
-```
-wget https://zenodo.org/record/14585837/files/runs_SNR-10.zip
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -e ".[test]"
 ```
 
-**Unzip the data**
+or with pip:
 
-```
-unzip runs_SNR-10.zip
-```
----
-- **If needed, you can visualize observing run statistics:**
-  [Summary Statistics](doc/summary.rst)
----
-
-- **Paper on the observing scenarios data:**
-  Kiendrebeogo et al. (2023)
-  DOI: [10.3847/1538-4357/acfcb1](https://iopscience.iop.org/article/10.3847/1538-4357/acfcb1)
-
-  Here is the GitHub repository of [Observing Scenario](https://github.com/lpsinger/observing-scenarios-simulations).
-
----
-## ULTRASAT Workflow Execution
-
-The pipeline consists of three main workflow execution scripts, each responsible for a specific stage of the ULTRASAT GW follow-up process.
-
-### **1. Initial Processing and Filtering**
-This script (`run_workflow_1.py`) automates the first stage of the ULTRASAT workflow, including:
-- **Parsing configuration parameters** from a `.ini` file.
-- **Filtering simulated GW events** (`workflow/localization_cut_and_batch.py`):
-  - Filters events based on **sky localization area (`max_area`)**.
-  - Retains events **below the threshold** and groups them into batches.
-  - Uses `classify_populations` to categorize events into **BNS, NSBH, and BBH**.
-- **Processing GW localization maps** (`workflow/max-texp-by-sky-loc.py`):
-  - Reads **GW localization maps** and extracts sky coverage probabilities.
-  - Computes the **maximum exposure time (`texp_max`)** within the **90% credible region**.
-  - Filters out events exceeding a **maximum allowed exposure time (`max_texp`)**.
-  - Outputs a **list of viable events** for follow-up.
-- **Submitting batch jobs to HTCondor**:
-  - Each batch file is processed independently.
-  - Jobs are submitted using an automated HTCondor submission script.
-
-#### **Command:**
-```
-python3 run_workflow_1.py --params params-O5.ini
-```
----
-### **2. Observation Scheduling and Job Submission**
-This script (`run_workflow_2.py`) automates the second stage of the ULTRASAT workflow, focusing on scheduling observations for selected gravitational wave events.
-
-- **Reading observation parameters** from a `.ini` configuration file.
-- **Preprocessing exposure times** using `workflow/texp_cut_and_batch.py`:
-  - Extracts exposure time constraints from the configuration file.
-  - Filters out events that exceed the mission-defined exposure limits.
-  - Generates batch files with viable observation targets.
-- **Generating ULTRASAT observation schedules with `M4OPT`**:
-  - Iterates over event batch files.
-  - Assigns observation time slots based on ULTRASAT’s operational constraints.
-- **Submitting jobs to HTCondor**:
-  - Each batch file is processed independently.
-  - Jobs are submitted using an automated HTCondor submission script.
-- **Logging execution details** for monitoring and debugging:
-  - Outputs detailed logs to track scheduling progress.
-  - Stores logs in a specified directory for post-processing analysis.
-
-#### **Command:**
-```
-python3 run_workflow_2.py --params params-O5.ini
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[test]"
 ```
 
----
-### **3. Follow-up Coverage and Visualization**
-This script (`run_workflow_3.py`) automates the third stage of the ULTRASAT workflow, focusing on computing follow-up coverage for gravitational wave events and generating visualizations.
+Scheduling needs the full CPLEX engine, not the size-limited runtime that
+comes with the `cplex` wheel. Install CPLEX Optimization Studio, then run:
 
-- **Reading observation parameters** from a `.ini` configuration file.
-- **Computing ULTRASAT follow-up coverage** using `workflow/compute_tiling.py`:
-  - Processes selected gravitational wave events.
-  - Determines ULTRASAT’s coverage for each event.
-  - Generates observation plans based on mission constraints.
-- **Generating statistical plots and visualizations** using `workflow/make-coverage-plots.py`:
-  - Creates sky maps illustrating ULTRASAT’s coverage.
-  - Produces histograms and summary statistics for observation efficiency.
-  - Outputs visual reports for scientific analysis.
-- **Logging execution details** for monitoring and debugging:
-  - Saves coverage reports for post-processing.
-  - Stores logs to track execution status.
+```bash
+./scripts/setup-cplex.sh
+```
 
-#### **Command:**
+Run it again after any reinstall of the `cplex` wheel. Steps 1, 2, 4 and 5
+need no CPLEX; only step 3 does.
+
+## Steps
+
+Every step takes the same `--config`, and every option of the file can be
+overridden on the command line. The module form
+(`python -m ultrasat_gw_followup.workflow.<step>`) and the installed command
+(`ugf-<step>`) are interchangeable.
+
+### 1. Download the observing scenarios
+
+```bash
+ugf-download --config config/ultrasat_lcs.ini
 ```
-python3 run_workflow_3.py --params params-O5.ini
+
+Fetches `runs.zip` (37 GiB) from Zenodo record
+[22550048](https://doi.org/10.5281/zenodo.22550048) into `data/`. That record
+is the GWTC-5.0 **FullPop** release, which is the population model of the
+paper; its PixelPop companion,
+[22555949](https://doi.org/10.5281/zenodo.22555949), is a different sample and
+needs its own merger-rate prior.
+
+The record is pinned, not resolved through the concept DOI: a later version
+would change the results. An interrupted download is resumed, a file that is
+already complete and verifies is left alone, and the MD5 published by Zenodo
+is checked before the archive is accepted. Once is enough — the three runs
+share `data/`.
+
+### 2. Unpack it
+
+```bash
+ugf-unpacker --config config/ultrasat_lcs.ini
 ```
+
+Writes `data/observing-scenarios.ecsv` (the BNS and NSBH events of O5a, O5b
+and O5c, secondary mass below 3 M⊙ in the source frame) and one sky map per
+event under `data/skymaps/<run>/`. Also shared by the three runs.
+
+### 3. Schedule
+
+```bash
+ugf-scheduler --config config/ultrasat_lcs.ini
+ugf-scheduler --config config/ultrasat_allsky.ini
+ugf-scheduler --config config/uvex.ini
+```
+
+Writes one wrapper script per event under `output/<run>/logs/` and submits it
+through the backend named by `[execution] backend`: `condor`, `slurm`,
+`parallel` or `dask`. The schedules land in `output/<run>/schedules/<run>/`.
+
+Useful options:
+
+- `--dry-run` writes the wrappers and submits nothing. Read one to check the
+  exact m4opt command before launching thousands of jobs.
+- `--skip-existing` skips the events that already have a schedule, which is
+  what you want when resuming.
+- `--backend parallel --n-cores 8` runs a handful of events locally.
+
+A job held for exceeding its memory or disk limit, or failing on the CPLEX
+1803 licensing error, is released and retried with a larger request, up to
+three times. Jobs that are still held afterwards should be released, not
+removed:
+
+```bash
+condor_q -hold                       # why they are held
+condor_release -constraint 'JobStatus == 5 && Owner == "'"$USER"'"'
+```
+
+`condor_rm` throws the work away and the event has to be scheduled from
+scratch; `condor_release` puts the job back in the queue with the escalated
+request the submit description already carries.
+
+When the queue has drained, check what came back and re-run what did not:
+
+```bash
+ugf-check-runs --config config/ultrasat_lcs.ini
+ugf-make-redo  --config config/ultrasat_lcs.ini --first 200
+ugf-scheduler  --config config/ultrasat_lcs.ini \
+    --event-table output/ultrasat_lcs/redo.ecsv
+```
+
+`ugf-check-runs` prints the solver statuses per observing run and writes
+`output/<run>/crashed.txt`: the events whose plan is missing, unreadable, or
+carries the CPLEX 1803 error. `ugf-make-redo` turns that list back into an
+event table the scheduler accepts.
+
+### 4. Post-process
+
+```bash
+ugf-postprocess --config config/ultrasat_lcs.ini
+ugf-postprocess --config config/ultrasat_allsky.ini
+ugf-postprocess --config config/uvex.ini
+```
+
+Reads every schedule, computes the kilonova detection probability at the true
+source position, and writes one table per run:
+`output/<run>/<run>.ecsv`. Copy the three into `results/` to replace the
+tables shipped here.
+
+### 5. Numbers, table and figure of the paper
+
+```bash
+ugf-paper-results
+```
+
+Reads `results/` and writes to `paper_outputs/`:
+
+- `numbers.tex`, one `\newcommand` per number quoted in Sections 4 and 5;
+- `mission_comparison.tex`, Table 5;
+- `detections_by_area_distance.pdf`, Figure 4.
+
+It prints every number grouped by section, then checks the qualitative
+statements of the text against the data; a line marked `CHECK THE TEXT` means
+a new run contradicts the prose.
+
+This step needs no cluster and no CPLEX. Since `results/` holds the three
+final tables, a fresh checkout reproduces the whole paper with:
+
+```bash
+pip install -e .
+ugf-paper-results
+```
+
+`notebooks/kilonovae_detection_rate.ipynb` builds the per-run rate tables and
+the area–distance figures from the same tables, and
+`scripts/figures/` holds the plan and field-of-view figures.
+
+## Tests
+
+```bash
+pip install -e ".[test]"
+ruff check
+ruff format --check
+pytest
+```
+
+The same checks run as git hooks, plus `codespell` and notebook-output
+stripping:
+
+```bash
+pip install -e ".[dev]"
+pre-commit install
+pre-commit run --all-files
+```
+
+## Citation
+
+The observing scenarios are archived at
+[doi:10.5281/zenodo.22550048](https://doi.org/10.5281/zenodo.22550048), and
+the schedules were produced with
+[M4OPT](https://github.com/m4opt/m4opt) 4.0.0.
