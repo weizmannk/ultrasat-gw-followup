@@ -9,8 +9,6 @@ STEPS = (
     "ugf-unpacker",
     "ugf-scheduler",
     "ugf-postprocess",
-    "ugf-check-runs",
-    "ugf-make-redo",
     "ugf-paper-results",
 )
 

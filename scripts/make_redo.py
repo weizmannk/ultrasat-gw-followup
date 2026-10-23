@@ -1,16 +1,15 @@
+#!/usr/bin/env python
 """Turn the crashed events of a run back into an event table to re-schedule.
 
-Reads the ``crashed.txt`` written by
-:mod:`~ultrasat_gw_followup.workflow.check_runs`, selects those rows of the
-event table and writes them to ``<out_dir>/redo.ecsv``, then prints the
+Reads the ``crashed.txt`` written by ``check_runs.py``, selects those rows of
+the event table and writes them to ``<out_dir>/redo.ecsv``, then prints the
 scheduler command that consumes it.
 
 Usage
 -----
 ::
 
-    python -m ultrasat_gw_followup.workflow.make_redo --config config/uvex.ini
-    ugf-make-redo --config config/uvex.ini --first 50
+    python scripts/make_redo.py --config config/uvex.ini --first 50
 
 Output: ``<out_dir>/redo.ecsv``.
 """
@@ -24,8 +23,8 @@ from pathlib import Path
 import numpy as np
 from astropy.table import QTable
 
+from check_runs import read_crashed
 from ultrasat_gw_followup.config import Config, resolve_input
-from ultrasat_gw_followup.workflow.check_runs import read_crashed
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +99,7 @@ def select(table, crashed):
 
 
 def main(argv=None):
-    """Entry point of ``ugf-make-redo``."""
+    """Write the event table of the crashed events, and how to re-run them."""
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )

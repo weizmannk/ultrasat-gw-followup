@@ -1,17 +1,17 @@
+#!/usr/bin/env python
 """Report which events of a run have a usable schedule, and which do not.
 
 An event counts as crashed when its schedule is missing, cannot be read, or
 records the CPLEX 1803 licensing error. Those are written to
-``<out_dir>/crashed.txt``, which
-:mod:`~ultrasat_gw_followup.workflow.make_redo` turns back into an event
-table.
+``<out_dir>/crashed.txt``, which ``make_redo.py`` turns back into an event
+table. Run it when the queue has drained, between scheduling and
+post-processing.
 
 Usage
 -----
 ::
 
-    python -m ultrasat_gw_followup.workflow.check_runs --config config/uvex.ini
-    ugf-check-runs --config config/uvex.ini
+    python scripts/check_runs.py --config config/uvex.ini
 
 Output: ``<out_dir>/crashed.txt``, one ``<run> <coinc_event_id>`` per line,
 plus a summary of the solution statuses per observing run.
@@ -154,7 +154,7 @@ def print_summary(statuses):
 
 
 def main(argv=None):
-    """Entry point of ``ugf-check-runs``."""
+    """Report the statuses of a run and list the events needing a re-run."""
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
@@ -167,10 +167,10 @@ def main(argv=None):
     path = write_crashed(args.out_dir / "crashed.txt", crashed)
     print(f"\n{len(crashed)} events to re-run, listed in {path}")
     if crashed:
-        config = (
+        where = (
             f"--config {args.config}" if args.config else f"--out-dir {args.out_dir}"
         )
-        print(f"Build their event table with: ugf-make-redo {config}")
+        print(f"Build their event table with: python scripts/make_redo.py {where}")
     return 0
 
 

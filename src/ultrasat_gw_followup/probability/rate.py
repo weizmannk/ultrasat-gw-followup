@@ -8,6 +8,23 @@
 import numpy as np
 from scipy import integrate, optimize, special, stats
 
+#: 5/50/95% quantiles of the total CBC merger rate density, in Gpc^-3 yr^-1,
+#: per GWTC-5.0 population model. From the "lower_5 / median / upper_95"
+#: columns of the rate summary of cbc-population-distributions -- FullPop
+#: 49.89 / 100.08 / 202.78, PixelPop 39.25 / 68.28 / 138.98 -- rounded as the
+#: paper quotes them.
+#:
+#: Read the median from this table, never from the "map" column: 65.09 is the
+#: FullPop maximum a posteriori, not the PixelPop median, and the two have
+#: been confused before.
+MERGER_RATE = {
+    "fullpop": {"lo": 50.0, "mid": 100.0, "hi": 203.0},
+    "pixelpop": {"lo": 39.0, "mid": 68.0, "hi": 139.0},
+}
+
+#: Model assumed for an event table written before the unpacker recorded one.
+DEFAULT_POPULATION = "fullpop"
+
 
 def betabinom_k_n(k, n):
     """Beta-binomial probability mass at k for n trials."""

@@ -10,7 +10,8 @@ from pathlib import Path
 import pytest
 from astropy.table import QTable
 
-from ultrasat_gw_followup.workflow import check_runs, make_redo
+import check_runs
+import make_redo
 
 RUNS = ("O5a", "O5b")
 

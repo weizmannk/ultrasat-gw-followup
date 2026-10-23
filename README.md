@@ -57,12 +57,12 @@ overridden on the command line. The module form
 ugf-download --config config/ultrasat_lcs.ini
 ```
 
-Fetches `runs.zip` (37 GiB) from Zenodo record
-[22550048](https://doi.org/10.5281/zenodo.22550048) into `data/`. That record
-is the GWTC-5.0 **FullPop** release, which is the population model of the
-paper; its PixelPop companion,
-[22555949](https://doi.org/10.5281/zenodo.22555949), is a different sample and
-needs its own merger-rate prior.
+Fetches `runs.zip` (42 GiB) from Zenodo record
+[22555949](https://doi.org/10.5281/zenodo.22555949) into `data/`: the GWTC-5.0
+**PixelPop** release. Its FullPop companion is
+[22550048](https://doi.org/10.5281/zenodo.22550048); switching between the two
+means changing `[download] record` and `[scenarios] pop` together, and the
+merger-rate prior follows automatically (see step 5).
 
 The record is pinned, not resolved through the concept DOI: a later version
 would change the results. An interrupted download is resumed, a file that is
@@ -78,7 +78,9 @@ ugf-unpacker --config config/ultrasat_lcs.ini
 
 Writes `data/observing-scenarios.ecsv` (the BNS and NSBH events of O5a, O5b
 and O5c, secondary mass below 3 M⊙ in the source frame) and one sky map per
-event under `data/skymaps/<run>/`. Also shared by the three runs.
+event under `data/skymaps/<run>/`. The population model is recorded in the
+table metadata, so the merger-rate prior cannot drift from the sample. Also
+shared by the three runs.
 
 ### 3. Schedule
 
@@ -117,16 +119,18 @@ request the submit description already carries.
 When the queue has drained, check what came back and re-run what did not:
 
 ```bash
-ugf-check-runs --config config/ultrasat_lcs.ini
-ugf-make-redo  --config config/ultrasat_lcs.ini --first 200
-ugf-scheduler  --config config/ultrasat_lcs.ini \
+python scripts/check_runs.py --config config/ultrasat_lcs.ini
+python scripts/make_redo.py  --config config/ultrasat_lcs.ini --first 200
+ugf-scheduler --config config/ultrasat_lcs.ini \
     --event-table output/ultrasat_lcs/redo.ecsv
 ```
 
-`ugf-check-runs` prints the solver statuses per observing run and writes
+`check_runs.py` prints the solver statuses per observing run and writes
 `output/<run>/crashed.txt`: the events whose plan is missing, unreadable, or
-carries the CPLEX 1803 error. `ugf-make-redo` turns that list back into an
-event table the scheduler accepts.
+carries the CPLEX 1803 error. `make_redo.py` turns that list back into an
+event table the scheduler accepts. These two are operational tooling rather
+than steps of the pipeline, which is why they live in `scripts/` and have no
+`ugf-` command.
 
 ### 4. Post-process
 
@@ -156,6 +160,11 @@ Reads `results/` and writes to `paper_outputs/`:
 It prints every number grouped by section, then checks the qualitative
 statements of the text against the data; a line marked `CHECK THE TEXT` means
 a new run contradicts the prose.
+
+Counts are expected numbers per year at the median merger rate of the table's
+population model — 100 Gpc⁻³ yr⁻¹ for FullPop, 68 for PixelPop — read from the
+metadata the unpacker wrote. A table that records no model is read as FullPop,
+which is what the tables currently in `results/` are.
 
 This step needs no cluster and no CPLEX. Since `results/` holds the three
 final tables, a fresh checkout reproduces the whole paper with:
@@ -190,6 +199,8 @@ pre-commit run --all-files
 ## Citation
 
 The observing scenarios are archived at
-[doi:10.5281/zenodo.22550048](https://doi.org/10.5281/zenodo.22550048), and
-the schedules were produced with
+[doi:10.5281/zenodo.22555949](https://doi.org/10.5281/zenodo.22555949)
+(PixelPop) and
+[doi:10.5281/zenodo.22550048](https://doi.org/10.5281/zenodo.22550048)
+(FullPop), and the schedules were produced with
 [M4OPT](https://github.com/m4opt/m4opt) 4.0.0.

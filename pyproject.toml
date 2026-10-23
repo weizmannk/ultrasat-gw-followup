@@ -54,14 +54,12 @@ ugf-download = "ultrasat_gw_followup.workflow.download:main"
 ugf-unpacker = "ultrasat_gw_followup.workflow.unpacker:main"
 ugf-scheduler = "ultrasat_gw_followup.workflow.scheduler:main"
 ugf-postprocess = "ultrasat_gw_followup.workflow.postprocess:main"
-ugf-check-runs = "ultrasat_gw_followup.workflow.check_runs:main"
-ugf-make-redo = "ultrasat_gw_followup.workflow.make_redo:main"
 ugf-paper-results = "ultrasat_gw_followup.workflow.paper_results:main"
 
 [project.urls]
 "GitHub" = "https://github.com/weizmannk/ultrasat-gw-followup"
 "Bug Tracker" = "https://github.com/weizmannk/ultrasat-gw-followup/issues"
-"Data" = "https://doi.org/10.5281/zenodo.22550048"
+"Data" = "https://doi.org/10.5281/zenodo.22555949"
 
 [build-system]
 requires = ["setuptools>=64"]

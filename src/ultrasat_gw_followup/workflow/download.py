@@ -10,7 +10,7 @@ Usage
 ::
 
     python -m ultrasat_gw_followup.workflow.download --config config/ultrasat_lcs.ini
-    ugf-download --record 22550048 --file-name runs.zip --data-dir data
+    ugf-download --record 22555949 --file-name runs.zip --data-dir data
 
 Output: ``<data_dir>/<file_name>``. Exits non-zero if anything fails.
 """
@@ -26,8 +26,9 @@ from tqdm.auto import tqdm
 
 from ultrasat_gw_followup.config import Config
 
-#: Zenodo record holding the GWTC-5.0 observing scenarios used by the paper.
-DEFAULT_RECORD = "22550048"
+#: Zenodo record holding the observing scenarios used by the paper: the
+#: GWTC-5.0 PixelPop release. Its FullPop companion is 22550048.
+DEFAULT_RECORD = "22555949"
 
 ZENODO_API = "https://zenodo.org/api/records"
 CHUNK_SIZE = 1 << 20

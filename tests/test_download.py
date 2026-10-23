@@ -16,7 +16,7 @@ from ultrasat_gw_followup.workflow import download
 CONFIGS = Path(__file__).resolve().parents[1] / "config"
 CONTENT = b"observing scenarios archive" * 100
 DIGEST = hashlib.md5(CONTENT).hexdigest()
-RECORD = "22550048"
+RECORD = "22555949"
 FILE_NAME = "runs.zip"
 
 

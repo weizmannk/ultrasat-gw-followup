@@ -38,9 +38,10 @@ Conventions
 * The *detected* count is the sum of the known-position detection
   probabilities of the selected events.
 * Counts are expected numbers per year at the median merger rate,
-  ``lambda = R_CBC / R_sim * N``, where ``R_sim`` is the effective rate of the
-  simulation stored in the table metadata. They are summed over the three O5
-  sub-periods for the O5 totals.
+  ``lambda = R_CBC / R_sim * N``, where ``R_CBC`` is the median rate of the
+  table's GWTC-5.0 population model and ``R_sim`` the effective rate of the
+  simulation, both read from the table metadata. They are summed over the
+  three O5 sub-periods for the O5 totals.
 * Percentiles of the selected events are unweighted; percentiles of the
   detections are weighted by the detection probability. Both use the
   ``inverted_cdf`` convention of the area--distance figures.
@@ -69,11 +70,16 @@ import numpy as np
 from astropy.table import QTable
 from matplotlib.patches import Patch
 
+from ultrasat_gw_followup.probability.rate import (
+    DEFAULT_POPULATION,
+    MERGER_RATE,
+)
+
 #: Default location of the three final tables, relative to the repository.
 RESULTS = Path("results")
 
 RUNS = ("O5a", "O5b", "O5c")
-R_CBC = 100.0  # Gpc^-3 yr^-1, GWTC-5.0 median total CBC rate
+
 
 #: Scheduler settings that must be identical for the comparison to be
 #: controlled. ``absmag_mean`` is deliberately absent: it is the same source
@@ -113,6 +119,7 @@ class Results:
     name: str
     path: Path
     table: QTable
+    population: str  # GWTC-5.0 population model of the sample
     key: np.ndarray  # "run:coinc_event_id"
     run: np.ndarray
     weight: np.ndarray  # expected events per year represented by each event
@@ -146,6 +153,10 @@ def _column(table, name, dtype=float):
 def load_results(path, name) -> Results:
     """Read one post-processed result table."""
     table = QTable.read(path)
+    population = table.meta.get("population_model", DEFAULT_POPULATION)
+    if population not in MERGER_RATE:
+        raise SystemExit(f"{path}: unknown population model {population!r}")
+    merger_rate = MERGER_RATE[population]["mid"]
     rates = {
         run: rate.to_value("Gpc-3 yr-1")
         for run, rate in table.meta["effective_rate"].items()
@@ -159,9 +170,10 @@ def load_results(path, name) -> Results:
         name=name,
         path=Path(path),
         table=table,
+        population=population,
         key=key,
         run=run,
-        weight=np.array([R_CBC / rates[r] for r in run]),
+        weight=np.array([merger_rate / rates[r] for r in run]),
         objective=np.nan_to_num(_column(table, "objective_value")),
         best_bound=np.nan_to_num(_column(table, "best_bound")),
         pdet=np.nan_to_num(_column(table, "detection_probability_known_position")),
@@ -215,6 +227,11 @@ def check_consistency(*missions: Results) -> None:
     for m in missions[1:]:
         if not np.array_equal(m.key, reference.key):
             raise SystemExit(f"{m.name} and {reference.name} hold different events")
+        if m.population != reference.population:
+            raise SystemExit(
+                f"{m.name} is {m.population} but {reference.name} is "
+                f"{reference.population}; the merger-rate priors differ"
+            )
     problems = []
     for column in MATCHED:
         values = {

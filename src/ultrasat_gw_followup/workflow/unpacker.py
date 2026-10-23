@@ -214,6 +214,10 @@ def process_zip(
             table["mass1"] <= mass_threshold * (1 + table["redshift"]), "BNS", "NSBH"
         )
 
+        # The merger-rate prior depends on the population model, so the model
+        # travels with the events rather than being restated downstream.
+        table.meta["population_model"] = pop
+
         event_table = out_root / "observing-scenarios.ecsv"
         table.write(event_table, overwrite=True)
 
