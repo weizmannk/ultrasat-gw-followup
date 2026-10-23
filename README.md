@@ -18,21 +18,25 @@ cutoff 0.1, `nside` 128, runs O5a, O5b and O5c.
 
 ## Installation
 
-With [uv](https://docs.astral.sh/uv/):
+With [uv](https://docs.astral.sh/uv/), from the lock file, which pins all
+224 packages to the versions the published numbers were produced with:
 
 ```bash
-uv venv --python 3.12
+uv sync --all-extras
 source .venv/bin/activate
-uv pip install -e ".[test]"
 ```
 
-or with pip:
+or with pip, which resolves dependencies afresh:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[test]"
 ```
+
+Prefer `uv sync` when reproducing the paper: `m4opt` is pinned in
+`pyproject.toml`, but numpy, scipy, astropy and ligo.skymap are not, and they
+move the last digits of the results.
 
 Scheduling needs the full CPLEX engine, not the size-limited runtime that
 comes with the `cplex` wheel. Install CPLEX Optimization Studio, then run:
@@ -41,8 +45,29 @@ comes with the `cplex` wheel. Install CPLEX Optimization Studio, then run:
 ./scripts/setup-cplex.sh
 ```
 
-Run it again after any reinstall of the `cplex` wheel. Steps 1, 2, 4 and 5
-need no CPLEX; only step 3 does.
+Run it again after any reinstall of the `cplex` wheel — `uv sync` pins the
+exact version precisely so that it does not reinstall one behind your back,
+but `pip install -U` will. Steps 1, 2, 4 and 5 need no CPLEX; only step 3
+does.
+
+To check which wheel is installed, read `uv pip list`, not
+`cplex.__version__`: the attribute reports 22.2.0.0 for both 22.2.0.0 and
+22.2.0.1.
+
+To run the notebook, add the `figures` extra and register a kernel:
+
+```bash
+pip install -e ".[figures]"
+hash -r                 # bash caches the path of the ipython it found first
+python -m ipykernel install --user --name ultrasat-gw-followup \
+    --display-name "ultrasat-gw-followup (3.12)"
+```
+
+Both matter on a cluster. Inside an IGWN conda environment, `ipython` and
+`jupyter` resolve to the environment's own Python 3.11, which does not see
+the virtualenv: `import m4opt` then fails although `python` imports it fine.
+Installing them in the virtualenv, and selecting the kernel above in Jupyter,
+is what keeps the notebook on the same interpreter as the pipeline.
 
 ## Steps
 

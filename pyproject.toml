@@ -41,6 +41,7 @@ test = [
 ]
 figures = [
     "ipykernel",
+    "ipython",
     "jupyter",
 ]
 dev = [
@@ -64,6 +65,15 @@ ugf-paper-results = "ultrasat_gw_followup.workflow.paper_results:main"
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
+
+[tool.uv]
+# m4opt asks for `cplex ~= 22.2.0.0`, a range, so uv is free to reinstall the
+# wheel. That would overwrite the full CPLEX Optimization Studio runtime that
+# `docplex config --upgrade` drops into site-packages, silently putting the
+# 1000-variable community limit back. An exact pin makes uv leave an
+# already-installed cplex alone. After any reinstall of the wheel, re-run
+# scripts/setup-cplex.sh.
+override-dependencies = ["cplex==22.2.0.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
