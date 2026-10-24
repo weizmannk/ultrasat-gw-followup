@@ -209,3 +209,64 @@ def test_dry_run_writes_the_wrappers_and_submits_nothing(tmp_path, monkeypatch):
     text = wrapper.read_text()
     assert "--mission=uvex" in text
     assert str(paths["sched"] / "O5a" / "1234.ecsv") in text
+
+
+# --------------------------------------------------------------------------
+# CPLEX preflight
+# --------------------------------------------------------------------------
+def prepare_run(tmp_path, extra=()):
+    """A one-event run, ready to submit."""
+    args = arguments_for("uvex", tmp_path, extra)
+    paths = scheduler.make_directories(args)
+    (paths["skymap"] / "O5a").mkdir(parents=True, exist_ok=True)
+    (paths["skymap"] / "O5a" / "1234.fits").touch()
+    QTable({"run": ["O5a"], "coinc_event_id": [1234]}).write(
+        args.data_dir / "observing-scenarios.ecsv"
+    )
+    return [
+        "--config",
+        str(CONFIGS / "uvex.ini"),
+        "--data-dir",
+        str(args.data_dir),
+        "--out-dir",
+        str(args.out_dir),
+        *extra,
+    ]
+
+
+def crippled_cplex():
+    raise RuntimeError("CPLEX cannot solve a 3000-variable model")
+
+
+def test_a_crippled_cplex_stops_the_submission(tmp_path, monkeypatch):
+    """1975 jobs dying one by one on the same error is the alternative."""
+    argv = prepare_run(tmp_path)
+    monkeypatch.setattr(scheduler, "find_m4opt", lambda: "m4opt")
+    monkeypatch.setattr(scheduler, "check_cplex", crippled_cplex)
+    monkeypatch.setattr(
+        scheduler, "submit", lambda *a: pytest.fail("must not submit without CPLEX")
+    )
+    assert scheduler.main(argv) == 1
+
+
+def test_skip_cplex_check_submits_anyway(tmp_path, monkeypatch):
+    argv = prepare_run(tmp_path, ["--skip-cplex-check"])
+    submitted = []
+    monkeypatch.setattr(scheduler, "find_m4opt", lambda: "m4opt")
+    monkeypatch.setattr(scheduler, "check_cplex", crippled_cplex)
+    monkeypatch.setattr(scheduler, "submit", lambda *a: submitted.append(a))
+    assert scheduler.main(argv) == 0
+    assert submitted
+
+
+def test_a_dry_run_does_not_need_cplex(tmp_path, monkeypatch):
+    """Writing wrappers is useful on a machine with no solver at all."""
+    argv = prepare_run(tmp_path, ["--dry-run"])
+    monkeypatch.setattr(scheduler, "find_m4opt", lambda: "m4opt")
+    monkeypatch.setattr(scheduler, "check_cplex", crippled_cplex)
+    assert scheduler.main(argv) == 0
+
+
+def test_the_probe_is_over_the_crippled_limit():
+    """Below 1000 variables the size-limited edition would pass the check."""
+    assert scheduler.CPLEX_PROBE_SIZE > 1000

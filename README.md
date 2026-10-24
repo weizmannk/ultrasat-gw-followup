@@ -119,6 +119,13 @@ Writes one wrapper script per event under `output/<run>/logs/` and submits it
 through the backend named by `[execution] backend`: `condor`, `slurm`,
 `parallel` or `dask`. The schedules land in `output/<run>/schedules/<run>/`.
 
+Before the first submission the scheduler solves a 3000-variable model and
+refuses to go on if CPLEX answers `Problem size limits exceeded`: without the
+Studio engine every job dies the same way two minutes in, so a thousand of
+them would waste a thousand slots to learn one fact. Run
+`scripts/setup-cplex.sh` and try again, or pass `--skip-cplex-check` to
+submit regardless.
+
 Useful options:
 
 - `--dry-run` writes the wrappers and submits nothing. Read one to check the

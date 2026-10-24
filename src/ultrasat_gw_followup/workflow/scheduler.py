@@ -42,6 +42,10 @@ from ultrasat_gw_followup.config import Config, resolve_input
 CPLEX_ERROR_PATTERN = r"CPLEX Error +1803"
 CPLEX_ERROR_EXIT_CODE = 42
 
+#: Size of the model :func:`check_cplex` solves. Over the 1000-variable
+#: ceiling of the edition shipped on PyPI, small enough to solve instantly.
+CPLEX_PROBE_SIZE = 3000
+
 BACKENDS = ("condor", "slurm", "parallel", "dask")
 
 log = logging.getLogger(__name__)
@@ -233,6 +237,11 @@ def parse_arguments(argv=None):
         action="store_true",
         help="write the wrappers but submit nothing",
     )
+    parser.add_argument(
+        "--skip-cplex-check",
+        action="store_true",
+        help="submit without checking that the full CPLEX engine is active",
+    )
 
     args = parser.parse_args(remaining)
     args.condor = config.getsection("condor")
@@ -390,6 +399,39 @@ def find_m4opt():
     return executable
 
 
+def check_cplex():
+    """Fail now if CPLEX is the size-limited edition shipped on PyPI.
+
+    That edition stops at 1000 variables and 1000 constraints; the plans of
+    this pipeline need around 100 000 of each. Without the engine of CPLEX
+    Optimization Studio every job dies the same way a couple of minutes in,
+    so a thousand of them waste a thousand slots to learn one fact. Solving
+    a model just over the limit here costs about a second.
+
+    Studio itself cannot be installed from here -- it is licensed, and IBM
+    does not allow redistribution -- so this only reports, and points at
+    ``scripts/setup-cplex.sh``.
+
+    Raises
+    ------
+    RuntimeError
+        If the model cannot be solved, whatever the reason.
+    """
+    import cplex
+
+    problem = cplex.Cplex()
+    problem.set_results_stream(None)
+    problem.set_log_stream(None)
+    problem.variables.add(names=[f"x{i}" for i in range(CPLEX_PROBE_SIZE)])
+    try:
+        problem.solve()
+    except Exception as error:
+        raise RuntimeError(
+            f"CPLEX cannot solve a {CPLEX_PROBE_SIZE}-variable model: {error}. "
+            "Install CPLEX Optimization Studio and run scripts/setup-cplex.sh."
+        ) from error
+
+
 def plan_events(table, paths, args):
     """Return the ``(run, event_id)`` pairs still to be scheduled.
 
@@ -459,6 +501,13 @@ def main(argv=None):
     if not wrappers:
         log.info("nothing to submit")
         return 0
+
+    if not args.skip_cplex_check:
+        try:
+            check_cplex()
+        except RuntimeError as error:
+            log.error("%s", error)
+            return 1
 
     submit(events, wrappers, paths, args)
     return 0

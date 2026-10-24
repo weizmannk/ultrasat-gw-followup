@@ -6,9 +6,6 @@ resolution-markers = [
     "python_full_version < '3.14'",
 ]
 
-[manifest]
-overrides = [{ name = "cplex", specifier = "==22.2.0.1" }]
-
 [[package]]
 name = "aep8"
 version = "1.1.0"
@@ -1328,7 +1325,7 @@ name = "importlib-metadata"
 version = "10.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp" },
+    { name = "zipp", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ad/cf/e10e59881da91198148339df7fc0d07a546d14bffda9df2e953274237ff7/importlib_metadata-10.0.0.tar.gz", hash = "sha256:91f91d04082e49e99df91762a6571ad65a56dabf876b860e668ffa107eaf1a98", size = 66755, upload-time = "2026-10-23T17:04:25.298Z" }
 wheels = [
