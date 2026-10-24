@@ -63,6 +63,50 @@ def to_kb(value):
     return int(float(number) * _UNITS[unit.upper()])
 
 
+def escalate(usage, floor, cap, growth):
+    """Build the ClassAd request expression of one resource.
+
+    A retry asks for ``growth`` times what the previous attempt actually
+    consumed, never below the floor and never above the cap. Escalating on
+    the measured usage rather than on the attempt number is what gets an
+    event that needs 150 GB there in one retry instead of two.
+
+    Three details are not optional:
+
+    ``usage`` does not exist until the job has run, so the expression must
+    fall back to a plain number at submit time; otherwise it evaluates to
+    undefined and the schedd refuses the job ("Submit requirement
+    REQUESTDISK evaluated to non-boolean").
+
+    ``min`` and ``max`` take a list, not two arguments.
+
+    The cap must be applied outside the floor, so that a floor already above
+    the cap still yields the cap rather than an unmatchable request.
+
+    Parameters
+    ----------
+    usage : str
+        ClassAd attribute holding the measured usage: ``MemoryUsage`` or
+        ``DiskUsage``.
+    floor : int
+        Request of the first attempt, in the unit HTCondor expects for the
+        attribute: MiB for memory, KiB for disk.
+    cap : int
+        Ceiling of the escalation, in the same unit.
+    growth : float
+        Multiplier applied to the measured usage.
+
+    Returns
+    -------
+    str
+        The ClassAd expression.
+    """
+    return (
+        f"ifthenelse({usage} =!= undefined, "
+        f"int(min({{{cap}, max({{{floor}, {usage} * {growth}}})}})), {floor})"
+    )
+
+
 def submit_description(wrapper_script, log_dir, settings):
     """Build the HTCondor submit description of one scheduling job.
 
@@ -103,6 +147,8 @@ def submit_description(wrapper_script, log_dir, settings):
         f"(HoldReasonCode == {HOLD_POLICY} && "
         f"HoldReasonSubCode == {HOLD_SUBCODE_CPLEX}))"
     )
+    memory_request = escalate("MemoryUsage", memory, memory_cap, growth)
+    disk_request = escalate("DiskUsage", disk, disk_cap, growth)
     return textwrap.dedent(f"""\
         +MaxHours = {values["max_hours"]}
         universe = vanilla
@@ -112,8 +158,8 @@ def submit_description(wrapper_script, log_dir, settings):
         error = {log_dir}/$(Cluster)_$(Process).err
         log = {log_dir}/$(Cluster)_$(Process).log
         request_cpus = 1
-        request_memory = int(min({memory_cap}, {memory} * pow({growth}, NumJobStarts)))
-        request_disk = int(min({disk_cap}, {disk} * pow({growth}, NumJobStarts)))
+        request_memory = {memory_request}
+        request_disk = {disk_request}
         periodic_release = {releasable} && (NumJobStarts <= {retries})
         on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
         on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
