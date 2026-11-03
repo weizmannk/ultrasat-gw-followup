@@ -10,8 +10,8 @@ from scipy import integrate, optimize, special, stats
 
 #: 5/50/95% quantiles of the total CBC merger rate density, in Gpc^-3 yr^-1,
 #: per GWTC-5.0 population model. From the "lower_5 / median / upper_95"
-#: columns of the rate summary of cbc-population-distributions -- FullPop
-#: 49.89 / 100.08 / 202.78, PixelPop 39.25 / 68.28 / 138.98 -- rounded as the
+#: columns of the rate summary of cbc-population-distributions, FullPop
+#: 49.89 / 100.08 / 202.78, PixelPop 39.25 / 68.28 / 138.98, rounded as the
 #: paper quotes them.
 #:
 #: Read the median from this table, never from the "map" column: 65.09 is the

@@ -26,8 +26,9 @@ def summarize_selected_detected_events(
     Summarize selected and detected events by class and run, returning a LaTeX table of rate quantiles.
 
     Computes the 5%, 50%, and 95% quantiles of the merger rate for each run using a Poisson-lognormal model,
-    following the O4 Rate & Population (R&P) methodology
-    (see `GWTC-4 R&P <https://arxiv.org/pdf/2508.18083>`_).
+    following the `doi:10.1088/1538-3873/adcfc6 <https://doi.org/10.1088/1538-3873/adcfc6>`_,
+    the merger rate of O5 Rate & Population (R&P) methodology
+    (see `GWTC-5 R&P <https://arxiv.org/pdf/2605.27226>`_).
 
     The log-expected rate for each run $r$ and source class $c$ is:
     .. math::
@@ -50,7 +51,7 @@ def summarize_selected_detected_events(
         population model the run was drawn from, so the caller states it
         rather than inheriting a silent default.
     run_duration : float, optional
-        Duration of the observing run in years (default: 1.5).
+        Duration of the observing run in years.
     detection_column : str, optional
         Column whose sum over the selected events gives the detected counts.
         The default is the single-deepest-field metric. Pass
@@ -66,7 +67,7 @@ def summarize_selected_detected_events(
         expected counts, ``lambda_total = sum_r exp(mu_r)``, and re-deriving
         the quantiles from ``log(lambda_total)`` at the *same* prior width.
         Convolving the per-run predictive distributions as if independent, or
-        summing their quantiles, would both be wrong -- the median is not
+        summing their quantiles, would both be wrong, the median is not
         additive. ``None`` (default) adds no such block.
     aggregate_label : str, optional
         Row label for that block (default ``"O5 total"``).
@@ -105,6 +106,16 @@ def summarize_selected_detected_events(
     # Extract mission and skygrid from metadata
     mission = np.unique(main_table["mission"])[0]
     skygrid = get_skygrid(main_table)
+
+    # The prior is an argument, but which population model it belongs to is a
+    # property of the sample. Naming both keeps the caption self-contained:
+    # the same table at 68 and at 100 Gpc^-3 yr^-1 is otherwise identical.
+    population = main_table.meta.get("population_model")
+    rate_caption = (
+        rf" $\lambda$ is the expected count at the median merger rate of"
+        rf" {merger_rate_mid:g}\,$\mathrm{{Gpc^{{-3}}\,yr^{{-1}}}}$"
+        + (rf", from the GWTC-5.0 {population} model." if population else ".")
+    )
 
     # Map skygrid for ULTRASAT to be add in the the caption
     skygrid_label = {
@@ -173,10 +184,9 @@ def summarize_selected_detected_events(
     mu = np.moveaxis(np.array(mu), 2, 0)
 
     # Expected count, straight from mu and before the CDF inversion. The
-    # table reports it because the median is uninformative here: it rounds to
-    # zero for every Detected entry, including those at lambda = 1.07 and
-    # 1.16, whose continuous medians are 0.41 and 0.50. Only lambda tells the
-    # sub-periods apart.
+    # table reports it because the median is too coarse here: most per-run
+    # Detected medians round to zero or one while their lambdas differ by a
+    # factor of two, so only lambda tells the sub-periods apart.
     lam = np.exp(mu)
 
     # Compute Poisson-lognormal quantiles
@@ -406,9 +416,9 @@ def summarize_selected_detected_events(
                 rf" with $P_\mathrm{{obj}} \geq {cutoff:g}$."
                 r" \emph{Detected}: expected number of kilonovae recovered, i.e.\ the"
                 r" sum of $P_\mathrm{det}^\mathrm{known}$ over the selected events."
-                r" $\lambda$ is the expected count at the median merger rate."
-                r" The range is the 90\% credible interval, which includes both the"
-                rf" merger-rate uncertainty and Poisson fluctuations."
+                + rate_caption
+                + r" The range is the 90\% credible interval, which includes both"
+                rf" the merger-rate uncertainty and Poisson fluctuations."
                 rf"{aggregate_caption}{zero_caption}}}"
             ),
             rf"\label{{tab:{label_stem}-selected-detected-{run_duration:g}yr}}",

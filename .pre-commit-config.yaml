@@ -23,7 +23,8 @@ repos:
         # the regex, which breaks re.search and silently disables the exclusion.
         exclude: |-
           ^(results/|tests/data/)
-        exclude_types: [python]  # covered by ruff W291
+        # ruff lints and formats both, notebook code cells included.
+        exclude_types: [python, jupyter]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.2
@@ -34,16 +35,17 @@ repos:
         # Also formats the notebook.
 
   # Strip output from Jupyter notebooks.
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.8.1
-    hooks:
-      - id: nbstripout
+  # - repo: https://github.com/kynan/nbstripout
+  #   rev: 0.8.1
+  #   hooks:
+  #     - id: nbstripout
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.3
     hooks:
       - id: codespell
-        args: ["--ignore-words=.codespell-ignore-words"]
-        exclude: ^(results/|tests/data/|\.pre-commit-config\.yaml$)
+        # Configured in pyproject.toml, so that a manual run obeys the same
+        # rules. tomli lets codespell read that file on Python < 3.11.
+        exclude: ^\.pre-commit-config\.yaml$
         additional_dependencies:
           - tomli

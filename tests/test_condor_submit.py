@@ -154,41 +154,57 @@ def test_accounting_group_and_max_hours_come_from_the_configuration(submit_descr
     assert description["+MaxHours"] == "12"
 
 
-#: Starting floors of each run, as its configuration sets them: ULTRASAT asks
-#: for twice the memory of UVEX, and the AllSS grid for more scratch than the
-#: LCS one.
-REQUESTS = {
-    "ultrasat_lcs": ("80000 MB", "20000 MB"),
-    "ultrasat_allsky": ("80000 MB", "70000 MB"),
-    "uvex": ("40000 MB", "20000 MB"),
-}
+RUNS = ("ultrasat_lcs", "ultrasat_allsky", "uvex")
+
+# The floors and ceilings are tuned against the pool as runs come back, so no
+# absolute value is pinned here: a test that must be edited every time one is
+# raised only teaches people to edit tests. What is pinned is what breaks a
+# run, and what has to stay consistent between the three.
 
 
-@pytest.mark.parametrize("name", REQUESTS)
-def test_the_run_configs_carry_the_requests_of_the_paper(name):
-    memory, disk = REQUESTS[name]
-    settings = Config(CONFIGS / f"{name}.ini").getsection("condor")
-    assert settings["request_memory"] == memory
-    assert settings["request_disk"] == disk
+def condor_settings(name):
+    return Config(CONFIGS / f"{name}.ini").getsection("condor")
+
+
+@pytest.mark.parametrize("name", RUNS)
+def test_the_retry_policy_is_the_one_of_the_paper(name):
+    settings = condor_settings(name)
     assert settings["max_retries"] == "3"
     assert float(settings["growth_factor"]) == 2.0
 
 
-@pytest.mark.parametrize("name", REQUESTS)
-def test_the_ceilings_are_the_same_for_every_run(name):
-    """The pool is one; only the floors are tuned per run."""
-    settings = Config(CONFIGS / f"{name}.ini").getsection("condor")
-    assert settings["max_request_memory"] == "200000 MB"
-    assert settings["max_request_disk"] == "100000 MB"
+def test_the_ceilings_are_the_same_for_every_run():
+    """The pool is one, so only the floors may differ between runs."""
+    ceilings = {
+        name: (
+            condor_settings(name)["max_request_memory"],
+            condor_settings(name)["max_request_disk"],
+        )
+        for name in RUNS
+    }
+    assert len(set(ceilings.values())) == 1, ceilings
 
 
-@pytest.mark.parametrize("name", REQUESTS)
+@pytest.mark.parametrize("name", RUNS)
 def test_no_floor_exceeds_its_ceiling(name):
     """A floor above the ceiling would make the job unmatchable from the start."""
-    settings = Config(CONFIGS / f"{name}.ini").getsection("condor")
-    assert condor.to_kb(settings["request_memory"]) <= condor.to_kb(
-        settings["max_request_memory"]
-    )
-    assert condor.to_kb(settings["request_disk"]) <= condor.to_kb(
-        settings["max_request_disk"]
-    )
+    settings = condor_settings(name)
+    for request, ceiling in (
+        ("request_memory", "max_request_memory"),
+        ("request_disk", "max_request_disk"),
+    ):
+        floor, cap = condor.to_kb(settings[request]), condor.to_kb(settings[ceiling])
+        assert 0 < floor <= cap, f"{name}: {request} above its ceiling"
+
+
+@pytest.mark.parametrize("name", RUNS)
+def test_a_floor_leaves_room_for_at_least_one_escalation(name):
+    """A floor above cap/growth spends all its retries re-requesting the cap."""
+    settings = condor_settings(name)
+    growth = float(settings["growth_factor"])
+    for request, ceiling in (
+        ("request_memory", "max_request_memory"),
+        ("request_disk", "max_request_disk"),
+    ):
+        floor, cap = condor.to_kb(settings[request]), condor.to_kb(settings[ceiling])
+        assert floor * growth <= cap, f"{name}: {request} cannot double"

@@ -2,7 +2,6 @@
 # Anchored, so that tests/data/ is still tracked.
 /data/
 /output/
-/paper_outputs/
 
 # Python
 __pycache__/
@@ -10,6 +9,10 @@ __pycache__/
 .venv/
 build/
 dist/
+
+# Vendor installers (CPLEX Studio and the like), kept out of the history.
+*.pkg
+*.bin
 
 # Tooling
 .pytest_cache/

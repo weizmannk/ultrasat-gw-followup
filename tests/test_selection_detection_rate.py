@@ -1,8 +1,8 @@
 """Tests for the aggregated block and the P(N=0) column of the rate table.
 
 The reference values are those of the paper, read from the final ULTRASAT LCS
-table: over O5, 24.44 selected events and 8.85 detected kilonovae per year at
-the median merger rate.
+table of the PixelPop run: over O5, 16.80 selected events and 6.25 detected
+kilonovae per year at the median merger rate of that model, 68 Gpc^-3 yr^-1.
 
 The aggregate is the delicate part. The merger-rate prior is a single
 astrophysical rate shared by every observing run, so its uncertainty is
@@ -28,23 +28,27 @@ from ultrasat_gw_followup.analysis.selection_detection_rate import (
     summarize_selected_detected_events,
 )
 from ultrasat_gw_followup.probability.rate import (
+    MERGER_RATE,
     poisson_lognormal_rate_cdf,
     poisson_lognormal_rate_quantiles,
 )
 
-EVENTS = Path(__file__).resolve().parents[1] / "results" / "ultrasat_lcs.ecsv"
+RESULTS = Path(__file__).resolve().parents[1] / "results" / "pixelpop"
+EVENTS = RESULTS / "ultrasat_lcs.ecsv"
 O5 = ("O5a", "O5b", "O5c")
-PRIOR = {"merger_rate_lo": 50, "merger_rate_mid": 100, "merger_rate_hi": 203}
+
+#: The prior of the sample, read from the one table that declares it.
+PRIOR = {f"merger_rate_{key}": value for key, value in MERGER_RATE["pixelpop"].items()}
 
 #: Aggregate of O5a+O5b+O5c for the ULTRASAT LCS grid, as quoted in the paper.
 #:   (row, class): (lambda, median, 5%, 95%, P(N=0) in percent)
 REFERENCE = {
-    ("Selected", "BNS"): (15.29, 14.7, 5.4, 32.2, 0.0),
-    ("Selected", "NSBH"): (9.15, 8.6, 2.5, 19.7, 0.2),
-    ("Selected", "All"): (24.44, 23.9, 9.9, 50.6, 0.0),
-    ("Detected", "BNS"): (5.60, 5.0, 0.9, 12.5, 1.4),
-    ("Detected", "NSBH"): (3.25, 2.6, 0.0, 7.6, 6.1),
-    ("Detected", "All"): (8.85, 8.3, 2.3, 19.1, 0.2),
+    ("Selected", "BNS"): (7.22, 6.6, 1.7, 15.0, 0.4),
+    ("Selected", "NSBH"): (9.58, 9.0, 2.9, 19.5, 0.1),
+    ("Selected", "All"): (16.80, 16.3, 6.6, 33.2, 0.0),
+    ("Detected", "BNS"): (2.95, 2.3, 0.0, 6.7, 7.3),
+    ("Detected", "NSBH"): (3.31, 2.7, 0.0, 7.5, 5.5),
+    ("Detected", "All"): (6.25, 5.7, 1.3, 13.2, 0.8),
 }
 ROWS = ["Selected", "Detected"]
 CLASSES = ["BNS", "NSBH", "All"]
@@ -139,15 +143,15 @@ def test_aggregate_matches_the_paper(row, cls):
 
 def test_prior_width_is_the_expected_sigma():
     _, _, sigma = aggregate_arrays()
-    assert sigma == pytest.approx(0.4259, abs=1e-4)
+    assert sigma == pytest.approx(0.3863, abs=1e-4)
 
 
 def test_the_table_prints_the_reference_lambdas():
     """The rendered aggregate must carry the numbers quoted in the paper."""
     rows = body_rows(summarize(aggregate_runs=O5))
     aggregate = [row for row in rows if row[1] == "All"][-1]
-    assert float(aggregate[2]) == pytest.approx(24.44, abs=0.01)
-    assert float(aggregate[4]) == pytest.approx(8.85, abs=0.01)
+    assert float(aggregate[2]) == pytest.approx(16.80, abs=0.01)
+    assert float(aggregate[4]) == pytest.approx(6.25, abs=0.01)
 
 
 # --------------------------------------------------------------------------
@@ -182,8 +186,8 @@ def test_median_is_not_additive():
             0.5, mu_aggregate[1, CLASSES.index("All")], sigma
         )
     )
-    assert sum(per_run_medians) == pytest.approx(7.0, abs=0.1)
-    assert correct == pytest.approx(8.3, abs=0.1)
+    assert sum(per_run_medians) == pytest.approx(4.34, abs=0.1)
+    assert correct == pytest.approx(5.66, abs=0.1)
     assert correct > sum(per_run_medians), "aggregate must not sum medians"
 
 

@@ -82,6 +82,15 @@ doctest_optionflags = ["FLOAT_CMP", "IGNORE_EXCEPTION_DETAIL"]
 
 [tool.ruff]
 src = ["src", "scripts", "tests"]
+# The notebook is a deliverable, not source: its cells are kept as the
+# author wrote them.
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["ultrasat_gw_followup"]
+
+[tool.codespell]
+# results/ and tests/data/ are generated data; the notebook keeps its
+# outputs, whose embedded base64 reads as words.
+skip = "*.ipynb,results/*,tests/data/*,uv.lock,.git/*"
+ignore-words = ".codespell-ignore-words"

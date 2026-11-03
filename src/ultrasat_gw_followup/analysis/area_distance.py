@@ -151,7 +151,7 @@ def compute_theoretical_limmag(
         Required keys: ``snr``, ``deadline``, ``delay``,
         ``exptime_max``, ``bandpass``.
     date : astropy.time.Time, optional
-        Reference date for orbit propagation. Defaults to 2026-09-01.
+        Reference date for orbit propagation. Defaults to 2026-11-01.
     time_step : astropy.units.Quantity, optional
         Time step between orbital samples (default: 1 hour).
         For GEO orbits (ULTRASAT), 1 hour is sufficient since the Cerenkov
@@ -164,7 +164,7 @@ def compute_theoretical_limmag(
         observable sky pixels and all sampled orbital positions.
     """
     if date is None:
-        date = Time("2026-09-01")
+        date = Time("2026-11-01")
 
     # Propagate orbit over one full GEO period (24 h) — same pattern as M4OPT
     obstimes = date + np.arange(0, 24 * u.hour, time_step, like=time_step)
@@ -260,6 +260,8 @@ def plot_area_distance(events_file, outdir="output", show=False):
     # Load event data from ECSV file
     main_table = QTable.read(events_file)
 
+    population_model = main_table.meta.get("population_model", "unknown")
+
     # ===================================================================
     # Extract constant parameters from table
     # ===================================================================
@@ -296,36 +298,20 @@ def plot_area_distance(events_file, outdir="output", show=False):
     mission = getattr(missions, constants["mission"])
     cutoff = constants["cutoff"]  # Threshold for triggered vs missing
 
-    #  This Function need to be run with Cplex credendials , so its hardcoded to ovoid rerunning it every time
     hpx = HEALPix(nside=constants["nside"], frame=ICRS(), order="nested")
 
-    log.info(mission.name)
-    if mission.name == "ultrasat":
-        limmag = 23.576296607302744 * u.mag  # Limiting magnitude
-        # ULTRASATneed cplex to propagate around the orbit
+    # Both missions go through the same call: m4opt applies the Cerenkov / AE8
+    # background to ULTRASAT and not to UVEX, from the observing() context.
+    # The epoch and the step hardly matter -- the limit varies by 0.03 mag
+    # over a full orbit, 1.4% in distance -- so the defaults are left alone.
+    #
+    # An earlier version hard-coded 23.576 mag here, from the Cerenkov
+    # implementation that predates m4opt 2.13; the current model gives 24.235.
+    limmag = compute_theoretical_limmag(
+        mission, hpx, constants, date=Time("2026-11-01"), time_step=1 * u.hour
+    )
 
-    # elif  mission.name == "uvex":
-    #     with observing(
-    #         observer_location=EarthLocation(0 * u.m, 0 * u.m, 0 * u.m),
-    #         target_coord=hpx.healpix_to_skycoord(np.arange(hpx.npix)),
-    #         obstime=Time("2026-05-14"),
-    #     ):
-    #         limmag = mission.detector.get_limmag(
-    #             constants["snr"],
-    #             min(constants["deadline"] - constants["delay"],
-    #                 constants["exptime_max"]),
-    #             synphot.SourceSpectrum(synphot.ConstFlux1D, amplitude=0 * u.ABmag),
-    #             constants["bandpass"],
-    #         ).max()
-    #         log.info(f"limmag:{limmag}")
-    else:
-        limmag = compute_theoretical_limmag(
-            mission,
-            hpx,
-            constants,
-            date=Time("2026-05-14"),
-            time_step=0.5 * u.h,
-        )
+    print(f"Theoretical limiting magnitude for {mission.name}: {limmag:.3f} mag")
 
     # ===================================================================
     # Calculate theoretical detection limits
@@ -374,9 +360,10 @@ def plot_area_distance(events_file, outdir="output", show=False):
     #
     # M is not the mean absolute magnitude but its bright tail,
     # M = absmag_mean - Phi^-1(1 - cutoff) * absmag_stdev. With cutoff = 0.1
-    # that is the 10th percentile, M = -16 - 1.28 * 1.3 = -17.67: the distance
-    # at which exactly `cutoff` of the kilonova population still clears the
-    # limit, which is the same threshold the scheduler applies to P_obj.
+    # that is the 10th percentile: the distance at which exactly `cutoff` of
+    # the kilonova population still clears the limit, which is the same
+    # threshold the scheduler applies to P_obj. It is -17.67 for ULTRASAT and
+    # -17.27 for UVEX, since the two adopt a different absmag_mean.
     #
     # m_lim is the best case: the whole window on a single field, at the most
     # favourable sky position and orbital phase (see compute_theoretical_limmag).
@@ -448,6 +435,12 @@ def plot_area_distance(events_file, outdir="output", show=False):
         # Define plot limits
         # ===================================================================
         xlim_min, xlim_max = 40, 4000  # Distance range in Mpc
+        if max_distance > 1.2 * xlim_max * u.Mpc:
+            xlim_max = 2 * max_distance.to_value(u.Mpc)
+
+        print(
+            f"Distance range for plotting: {max_distance.to_value(u.Mpc):.0f} Mpc, Crossover: {crossover_distance.to_value(u.Mpc):.0f} Mpc"
+        )
         crossover_val = crossover_distance.to_value(u.Mpc)
         max_dist_val = max_distance.to_value(u.Mpc)
         # The ceiling of the boundary is whichever is smaller: the sky, or
@@ -734,11 +727,16 @@ def plot_area_distance(events_file, outdir="output", show=False):
             ),
         ]
 
-        # Create legend with Seaborn elegant styling
+        # Hang the legend just under the "Max area" line rather than at a fixed
+        # height: that line sits at the full sky for ULTRASAT but at a quarter
+        # of it for UVEX, and a fixed anchor ran straight through it.
+        max_area_level = (np.log10(max_area_display_val) - np.log10(ylim_min)) / (
+            np.log10(ylim_max) - np.log10(ylim_min)
+        )
         legend = ax_joint.legend(
             handles=legend_elements,
             loc="upper left",
-            bbox_to_anchor=(0, 0.93),  # Slightly lowered position
+            bbox_to_anchor=(0, max_area_level - 0.03),
             fontsize=11,
             framealpha=0.9,  # Semi-transparent background
             edgecolor="#CCCCCC",  # Soft gray border
@@ -1044,7 +1042,7 @@ def plot_area_distance(events_file, outdir="output", show=False):
         # Join on the non-empty parts only: a mission without skygrid
         # variants (UVEX) would otherwise yield "uvex__area-distance".
         stem = "_".join(part for part in (mission.name, skygrid) if part)
-        output_file = f"{outdir}/{stem}_area-distance_{run}.pdf"
+        output_file = f"{outdir}/{stem}_area-distance_{run}_{population_model}.pdf"
         fig.savefig(output_file, dpi=300, bbox_inches="tight")
         log.info(f" Saved: {output_file}")
         log.info(

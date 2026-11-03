@@ -1,6 +1,6 @@
 """Numbers, table and figure of the ULTRASAT paper, from the final result tables.
 
-Every value quoted in Sections 4 and 5 of the paper is computed here, from the
+Every value quoted in the paper is computed here, from the
 three post-processed result tables and the observing-scenarios event table.
 Re-running a mission and then this script is enough to bring the paper up to
 date; nothing is typed by hand.
@@ -10,10 +10,10 @@ Usage
 ::
 
     python -m ultrasat_gw_followup.workflow.paper_results
-    ugf-paper-results --lcs output/ultrasat_lcs/ultrasat_lcs.ecsv
+    ugf-paper-results --results-dir results/fullpop
 
-With no argument it reads the three tables of ``results/`` and writes to
-``paper_outputs/``. The same entry point can be called from a notebook::
+With no argument it reads the four tables of ``results/pixelpop/`` and writes
+to ``paper_outputs/``. The same entry point can be called from a notebook::
 
     from ultrasat_gw_followup.workflow.paper_results import main
     numbers = main([...same arguments...])
@@ -23,9 +23,9 @@ Outputs (in ``--outdir``)
 ``numbers.tex``
     One ``\\newcommand`` per number quoted in the text.
 ``mission_comparison.tex``
-    Table 5 of the paper: ULTRASAT (LCS) and UVEX per sub-period.
+    ULTRASAT (LCS) and UVEX per sub-period.
 ``detections_by_area_distance.pdf`` (and ``.png``)
-    Figure 4 of the paper: detected kilonovae per bin of localization area
+    Detected kilonovae per bin of localization area
     and of luminosity distance, for both missions.
 
 A plain-text report of every quoted number is printed, followed by a check of
@@ -67,6 +67,7 @@ from pathlib import Path
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from astropy import units as u
 from astropy.table import QTable
 from matplotlib.patches import Patch
 
@@ -75,8 +76,10 @@ from ultrasat_gw_followup.probability.rate import (
     MERGER_RATE,
 )
 
-#: Default location of the three final tables, relative to the repository.
+#: Final tables, one directory per GWTC-5.0 population model. The paper is
+#: built from the PixelPop set; the FullPop one is kept for comparison.
 RESULTS = Path("results")
+DEFAULT_RESULTS = RESULTS / "pixelpop"
 
 RUNS = ("O5a", "O5b", "O5c")
 
@@ -96,13 +99,13 @@ MATCHED = (
     "bandpass",
 )
 
-#: Bins of Figure 4.
+#: Bins of the area and distance histograms.
 AREA_BINS = (0, 100, 500, 1000, 2000, 5000, np.inf)  # deg^2
 AREA_LABELS = ("<100", "100–500", "500–1k", "1k–2k", "2k–5k", ">5k")
 DISTANCE_BINS = (0, 200, 300, 400, 500, 700, np.inf)  # Mpc
 DISTANCE_LABELS = ("<200", "200–300", "300–400", "400–500", "500–700", ">700")
 
-#: Network SNR thresholds of the robustness test (Section 5.3).
+#: Network SNR thresholds of the robustness test.
 SNR_THRESHOLDS = (8, 10, 12)
 
 #: Categorical colours (validated for colour-vision deficiencies).
@@ -352,7 +355,7 @@ def collect_numbers(us, al, uv, snr) -> dict:
     def put(name, value, fmt):
         n[name] = format(value, fmt)
 
-    # Yields per sub-period (Tables 4 and 5).
+    # Yields per sub-period.
     for r in RUNS:
         L = letter[r]
         put(f"gw{L}", gw[r], ".1f")
@@ -361,7 +364,7 @@ def collect_numbers(us, al, uv, snr) -> dict:
             put(f"{p}Det{L}", y[p][r][1], ".2f")
         put(f"ratioDet{L}", y["uv"][r][1] / y["us"][r][1], ".1f")
 
-    # O5 totals, efficiencies and growth (Sections 4.3 and 5.1).
+    # O5 totals, efficiencies and growth.
     for p, m in (("us", us), ("as", al), ("uv", uv)):
         put(f"{p}SelTot", y[p]["O5"][0], ".1f")
         put(f"{p}DetTot", y[p]["O5"][1], ".2f")
@@ -384,12 +387,12 @@ def collect_numbers(us, al, uv, snr) -> dict:
         put(f"gwAreaMed{letter[r]}", area, ".0f")
         put(f"gwDistMed{letter[r]}", dist, ".0f")
 
-    # Percentiles of the LCS area--distance figures (Section 4.1).
+    # Percentiles of the LCS area--distance figures.
     for r in RUNS:
         for k, v in selection_percentiles(us, r).items():
             put(f"us{k}{letter[r]}", v, ".0f")
 
-    # Grid comparison (Section 4.4).
+    # Grid comparison.
     a = us.run == "O5a"
     put("gridNlcsA", np.sum(us.selected & a), "d")
     put("gridNallA", np.sum(al.selected & a), "d")
@@ -408,7 +411,7 @@ def collect_numbers(us, al, uv, snr) -> dict:
     )
     put("gridDetDiffTot", 100 * abs(y["as"]["O5"][1] / y["us"]["O5"][1] - 1), ".0f")
 
-    # Where the detections come from (Section 4.1, Figure 4).
+    # Where the detections come from.
     w = us.weight
     small, large = us.area < 500, us.area >= 2000
     put("usDetSmallArea", us.n_detected(small), ".1f")
@@ -437,7 +440,7 @@ def collect_numbers(us, al, uv, snr) -> dict:
         ".0f",
     )
 
-    # Complementarity (Section 5.1).
+    # Complementarity.
     c = complementarity(us, uv)
     put("usOnlySel", c["us_only_sel"], ".1f")
     put("usOnlyDet", c["us_only_det"], ".1f")
@@ -445,7 +448,7 @@ def collect_numbers(us, al, uv, snr) -> dict:
     put("bestOfBoth", c["best_of_both"], ".1f")
     put("bestOfBothGainPct", 100 * (c["best_of_both"] / y["uv"]["O5"][1] - 1), ".0f")
 
-    # Robustness to the GW detection criterion (Section 5.3).
+    # Robustness to the GW detection criterion.
     robust = snr_robustness(snr, us, uv)
     for threshold in SNR_THRESHOLDS[1:]:
         r = robust[threshold]
@@ -453,7 +456,7 @@ def collect_numbers(us, al, uv, snr) -> dict:
         put(f"snrUsLoss{threshold}", 100 * (1 - r["ULTRASAT"]), ".0f")
         put(f"snrUvLoss{threshold}", 100 * (1 - r["UVEX"]), ".0f")
 
-    # Solver convergence (Section 5.3).
+    # Solver convergence.
     for p, m in (("us", us), ("as", al), ("uv", uv)):
         s = solver_summary(m)
         put(f"{p}LimitPct", s["limited_pct"], ".0f")
@@ -471,8 +474,31 @@ def write_numbers(path, numbers, sources) -> None:
     Path(path).write_text("\n".join(lines) + "\n")
 
 
+def setting(results: Results, column) -> str:
+    """The single value a scheduler setting takes across a result table.
+
+    Raises
+    ------
+    SystemExit
+        If the table holds more than one, which would make a caption quoting
+        it wrong for part of the rows.
+    """
+    values = {str(value) for value in results.table[column]}
+    if len(values) != 1:
+        raise SystemExit(
+            f"{results.path}: several values of {column}: {sorted(values)}"
+        )
+    return values.pop()
+
+
 def write_comparison_table(path, us, uv) -> None:
-    """Table 5: ULTRASAT (LCS) and UVEX per sub-period."""
+    """ULTRASAT (LCS) and UVEX per sub-period.
+
+    Every quantity the caption states is read back from the tables, so that it
+    cannot drift from the run it describes -- the population model in
+    particular, which sets the merger rate and is the only thing that
+    distinguishes two otherwise identical-looking tables.
+    """
     y_us, y_uv, gw = yields(us), yields(uv), gw_counts(us)
     rows = [
         f"{'O5 total' if r == 'O5' else r} & {gw[r]:.1f} & {y_us[r][0]:.2f} & "
@@ -482,17 +508,28 @@ def write_comparison_table(path, us, uv) -> None:
     ]
     rows.insert(len(RUNS), r"\midrule")
     body = "\n".join(rows)
+
+    model = us.population
+    rate = MERGER_RATE[model]["mid"]
+    snr = f"{float(setting(us, 'snr')):g}"
+    visits = int(float(setting(us, "visits")))
+    delay = u.Quantity(setting(us, "delay")).to(u.min)
+    deadline = u.Quantity(setting(us, "deadline")).to(u.hour)
+    grid = us.table["skygrid"][0]
+
     Path(path).write_text(
         rf"""\begin{{table}}[!htb]
 \centering
 \renewcommand\arraystretch{{1.15}}
 \setlength{{\tabcolsep}}{{0.14cm}}
-\caption{{ULTRASAT (LCS grid) and UVEX under identical scheduling assumptions:
-the same simulated events, the same kilonova integrated through each mission's
-NUV band, SNR\,$=5$, two visits, observations between 15\,min and 6\,hr after
-the merger. All values are expected numbers per year, $\lambda$, at the median
-merger rate; the 90\% credible intervals are given in
-Tables~\ref{{tab:ultrasat-non-overlap-selected-detected-1yr}}
+\caption{{ULTRASAT ({grid} grid) and UVEX under identical scheduling
+assumptions: the same simulated events, the same kilonova integrated through
+each mission's NUV band, SNR\,$={snr}$, {visits} visits, observations between
+{delay.value:g}\,min and {deadline.value:g}\,hr after the merger. Events are
+drawn from the GWTC-5.0 {model} model, whose median total CBC merger rate is
+{rate:g}\,$\mathrm{{Gpc^{{-3}}\,yr^{{-1}}}}$. All values are expected numbers
+per year, $\lambda$, at that rate; the 90\% credible intervals are given in
+Tables~\ref{{tab:ultrasat-{grid}-selected-detected-1yr}}
 and~\ref{{tab:uvex-selected-detected-1yr}}. \emph{{GW}}: BNS and NSBH detections.
 \emph{{Sel.}}: selected events; \emph{{Det.}}: detected kilonovae.
 \emph{{Ratio}}: UVEX over ULTRASAT detected counts. Because both missions follow
@@ -513,7 +550,7 @@ Run & GW & Sel. & Det. & Sel. & Det. & Ratio \\
 
 
 def plot_detections_by_area_distance(path, us, uv) -> None:
-    """Figure 4: detected kilonovae over O5 per bin of area and of distance.
+    """Detected kilonovae over O5 per bin of area and of distance.
 
     Both panels share the same vertical scale. The number of BNS and NSBH GW
     detections of each bin is written under its label.
@@ -610,35 +647,35 @@ def check_claims(n: dict, us: Results, uv: Results) -> list:
     large = us.area >= 2000
     return [
         (
-            "Abstract, Sec. 4.3: ULTRASAT grows more slowly than the GW sample",
+            "ULTRASAT grows more slowly than the GW sample",
             f["usGrowth"] < f["gwGrowth"],
         ),
         (
-            "Abstract, Sec. 1: most ULTRASAT detections come from areas below 500 deg2",
+            "most ULTRASAT detections come from areas below 500 deg2",
             f["usDetSmallAreaPct"] > 50,
         ),
         (
-            "Abstract, Sec. 5.1: the two missions perform alike above 2000 deg2",
+            "the two missions perform alike above 2000 deg2",
             abs(uv.n_detected(large) / us.n_detected(large) - 1) < 0.25,
         ),
         (
-            "Abstract, Sec. 1, 5.1: UVEX detects more than ULTRASAT",
+            "UVEX detects more than ULTRASAT",
             f["ratioDetTot"] > 1,
         ),
         (
-            "Sec. 5.1: UVEX converts more selected events into detections",
+            "UVEX converts more selected events into detections",
             f["uvEffMin"] > f["usEffMax"],
         ),
         (
-            "Sec. 5.3: the yields shrink less than the GW sample at SNR >= 10",
+            "the yields shrink less than the GW sample at SNR >= 10",
             f["snrUsLoss10"] < f["snrGwLoss10"] and f["snrUvLoss10"] < f["snrGwLoss10"],
         ),
         (
-            "Sec. 5.3: the UVEX plans are further from optimal than ULTRASAT's",
+            "the UVEX plans are further from optimal than ULTRASAT's",
             f["uvGapPct"] > f["usGapPct"],
         ),
         (
-            "Sec. 4.4: the two grids agree to within 5% in detections over O5",
+            "the two grids agree to within 5% in detections over O5",
             f["gridDetDiffTot"] <= 5,
         ),
     ]
@@ -661,7 +698,7 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
         f"  UVEX / ULTRASAT detected     {n['ratioDetA']:>7} {n['ratioDetB']:>7} {n['ratioDetC']:>7} {n['ratioDetTot']:>7}"
     )
 
-    print("\nSec. 4.1  90th percentiles (LCS)   O5a / O5b / O5c")
+    print("\n90th percentiles, LCS             O5a / O5b / O5c")
     for k in ("DistAll", "DistTrig", "DistDet", "AreaTrig", "AreaDet"):
         print(
             f"  {k:9s} {n['us' + k + 'A']} / {n['us' + k + 'B']} / {n['us' + k + 'C']}"
@@ -672,7 +709,7 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
         f"{n['usFracDistMid']}% (500-700 Mpc)"
     )
 
-    print("\nSec. 4.3  ULTRASAT LCS")
+    print("\nULTRASAT LCS")
     print(
         f"  detected over O5: {n['usDetTot']} ({n['usDetBNS']} BNS, {n['usDetNSBH']} NSBH); "
         f"detected/selected {n['usEffMin']}-{n['usEffMax']}%; {n['usDetFracGW']}% of GW events"
@@ -689,7 +726,7 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
         f"distance (Mpc): {n['gwDistMedA']} / {n['gwDistMedB']} / {n['gwDistMedC']}"
     )
 
-    print("\nSec. 4.4  Grids")
+    print("\nSky grids")
     print(
         f"  O5a selected: LCS {n['gridNlcsA']}, AllSS {n['gridNallA']}, common {n['gridNcommonA']}, "
         f"LCS only {n['gridNlcsOnlyA']}, AllSS only {n['gridNallOnlyA']}"
@@ -699,7 +736,7 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
         f" O5 detected {n['gridDetDiffTot']}%"
     )
 
-    print("\nSec. 5.1  ULTRASAT and UVEX")
+    print("\nULTRASAT and UVEX")
     print(
         f"  detected/selected: ULTRASAT {n['usEffMin']}-{n['usEffMax']}%, UVEX {n['uvEffMin']}-{n['uvEffMax']}%;"
         f" median fields per plan {n['usFieldsMed']} vs {n['uvFieldsMed']}"
@@ -716,7 +753,7 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
         f" best of both {n['bestOfBoth']} (+{n['bestOfBothGainPct']}% over UVEX)"
     )
 
-    print("\nSec. 5.3  Limitations")
+    print("\nLimitations")
     for t in SNR_THRESHOLDS[1:]:
         print(
             f"  SNR >= {t}: GW -{n[f'snrGwLoss{t}']}%, ULTRASAT -{n[f'snrUsLoss{t}']}%, UVEX -{n[f'snrUvLoss{t}']}%"
@@ -738,26 +775,33 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
-        "--lcs",
-        default=RESULTS / "ultrasat_lcs.ecsv",
-        help="ULTRASAT result table, LCS grid",
+        "--results-dir",
+        type=Path,
+        default=DEFAULT_RESULTS,
+        help="directory holding the four tables of one population model",
     )
-    parser.add_argument(
-        "--allsky",
-        default=RESULTS / "ultrasat_allsky.ecsv",
-        help="ULTRASAT result table, AllSS grid",
-    )
-    parser.add_argument(
-        "--uvex", default=RESULTS / "uvex.ecsv", help="UVEX result table"
-    )
+    parser.add_argument("--lcs", help="ULTRASAT result table, LCS grid")
+    parser.add_argument("--allsky", help="ULTRASAT result table, AllSS grid")
+    parser.add_argument("--uvex", help="UVEX result table")
     parser.add_argument(
         "--scenarios",
-        default=RESULTS / "observing-scenarios.ecsv",
         help="observing-scenarios table, read only when the result tables "
         "carry no network_snr column",
     )
     parser.add_argument("--outdir", default="paper_outputs", help="output directory")
-    return parser.parse_args(argv)
+
+    args = parser.parse_args(argv)
+    # Each table defaults to its own name inside --results-dir, so switching
+    # population model is one flag rather than four paths.
+    for option, name in (
+        ("lcs", "ultrasat_lcs"),
+        ("allsky", "ultrasat_allsky"),
+        ("uvex", "uvex"),
+        ("scenarios", "observing-scenarios"),
+    ):
+        if getattr(args, option) is None:
+            setattr(args, option, args.results_dir / f"{name}.ecsv")
+    return args
 
 
 def run(argv=None) -> dict:
