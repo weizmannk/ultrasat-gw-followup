@@ -40,6 +40,7 @@ from scipy import stats
 from tqdm.auto import tqdm
 
 from ultrasat_gw_followup.analysis import get_skygrid
+from ultrasat_gw_followup.probability.rate import DEFAULT_POPULATION
 
 
 def fov_area(mission):
@@ -260,7 +261,10 @@ def plot_area_distance(events_file, outdir="output", show=False):
     # Load event data from ECSV file
     main_table = QTable.read(events_file)
 
-    population_model = main_table.meta.get("population_model", "unknown")
+    # The fullpop tables predate this metadata. mission_yields falls back to
+    # the same default and weights them with the FullPop rate, so the figures
+    # must carry the label the numbers were computed under.
+    population_model = main_table.meta.get("population_model", DEFAULT_POPULATION)
 
     # ===================================================================
     # Extract constant parameters from table
@@ -789,19 +793,9 @@ def plot_area_distance(events_file, outdir="output", show=False):
             else 0
         )
 
-        # Calculate percentiles
-        ticks = [
-            np.quantile(table["distance"], [0.9], method="inverted_cdf").item(),
-            np.quantile(
-                triggered_table["distance"], [0.9], method="inverted_cdf"
-            ).item(),
-            np.quantile(
-                triggered_table["distance"],
-                [0.9],
-                weights=triggered_table["detection_probability_known_position"],
-                method="inverted_cdf",
-            ).item(),
-        ]
+        # The lines and the text box read the same three values, so that they
+        # cannot drift apart.
+        ticks = [perc_90_all, perc_90_trig, perc_90_det]
         colors_lines = ["gray", "dodgerblue", "red"]
         # Draw vertical lines
         for tick, color in zip(ticks, colors_lines):
@@ -958,21 +952,6 @@ def plot_area_distance(events_file, outdir="output", show=False):
             },
         )
 
-        # ===================================================================
-        # Calculate and display summary statistics
-        # ===================================================================
-        total_events = len(table)
-        n_triggered = len(triggered_table)
-        n_detected_eff = weights_detected.sum()  # Effective number of detections
-        perc_90_trig = (
-            np.percentile(triggered_table["distance"], 90)
-            if len(triggered_table) > 0
-            else 0
-        )
-
-        # ===================================================================
-        # Calculate and display summary statistics WITH percentiles table
-        # ===================================================================
         total_events = len(table)
         n_triggered = len(triggered_table)
         n_detected_eff = weights_detected.sum()

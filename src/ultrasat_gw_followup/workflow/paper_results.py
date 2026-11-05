@@ -1,66 +1,43 @@
-"""Numbers, table and figure of the ULTRASAT paper, from the final result tables.
+"""Numbers, table and figure of the paper, from the final result tables.
 
-Every value quoted in the paper is computed here, from the
-three post-processed result tables and the observing-scenarios event table.
-Re-running a mission and then this script is enough to bring the paper up to
-date; nothing is typed by hand.
+Every value the paper quotes is computed from the three post-processed result
+tables and the observing-scenarios event table. Re-running a mission and then
+this script is enough to bring the paper up to date; nothing is typed by hand.
+
+The statistics themselves live in
+:mod:`ultrasat_gw_followup.analysis.mission_yields`, which also documents the
+conventions; this module only turns them into LaTeX, a figure and a report.
 
 Usage
 -----
 ::
 
-    python -m ultrasat_gw_followup.workflow.paper_results
+    ugf-paper-results                              # the PixelPop set
     ugf-paper-results --results-dir results/fullpop
 
-With no argument it reads the four tables of ``results/pixelpop/`` and writes
-to ``paper_outputs/``. The same entry point can be called from a notebook::
+One flag switches population model: the four input tables default to their own
+names inside ``--results-dir``, and the outputs go to
+``paper_outputs/<model>/``, where the model is the one the tables record. So
+each set of results is written beside its own, and the two can never be mixed.
 
-    from ultrasat_gw_followup.workflow.paper_results import main
-    numbers = main([...same arguments...])
-
-Outputs (in ``--outdir``)
--------------------------
-``numbers.tex``
+Outputs
+-------
+``tables/numbers-<model>.tex``
     One ``\\newcommand`` per number quoted in the text.
-``mission_comparison.tex``
+``tables/mission_comparison-<model>.tex``
     ULTRASAT (LCS) and UVEX per sub-period.
-``detections_by_area_distance.pdf`` (and ``.png``)
-    Detected kilonovae per bin of localization area
-    and of luminosity distance, for both missions.
+``figures/detections_by_area_distance-<model>.pdf`` (and ``.png``)
+    Detected kilonovae per bin of localization area and of luminosity
+    distance, for both missions.
 
-A plain-text report of every quoted number is printed, followed by a check of
-the qualitative statements of the text against the data.
-
-Conventions
------------
-* An event is *selected* when the scheduler objective is at least the cutoff
-  stored in the table (0.1).
-* The *detected* count is the sum of the known-position detection
-  probabilities of the selected events.
-* Counts are expected numbers per year at the median merger rate,
-  ``lambda = R_CBC / R_sim * N``, where ``R_CBC`` is the median rate of the
-  table's GWTC-5.0 population model and ``R_sim`` the effective rate of the
-  simulation, both read from the table metadata. They are summed over the
-  three O5 sub-periods for the O5 totals.
-* Percentiles of the selected events are unweighted; percentiles of the
-  detections are weighted by the detection probability. Both use the
-  ``inverted_cdf`` convention of the area--distance figures.
-
-Note
-----
-``postprocess.py`` copies the scheduler arguments into the result tables, and
-its ``snr`` argument (the kilonova detection threshold, 5) overwrites the
-network SNR of the GW event. Tables written by the current postprocess keep
-the network SNR in a ``network_snr`` column; older ones do not, and for those
-it is read from the observing-scenarios table, matched on
-``(run, coinc_event_id)``.
+A report of every quoted number is printed, followed by a check of the
+qualitative statements of the text against the data.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
 
@@ -68,427 +45,238 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy import units as u
-from astropy.table import QTable
 from matplotlib.patches import Patch
 
-from ultrasat_gw_followup.probability.rate import (
-    DEFAULT_POPULATION,
-    MERGER_RATE,
+from ultrasat_gw_followup.analysis.mission_yields import (
+    AREA_BINS,
+    AREA_LABELS,
+    DISTANCE_BINS,
+    DISTANCE_LABELS,
+    RUNS,
+    SNR_THRESHOLDS,
+    Results,
+    binned,
+    check_consistency,
+    complementarity,
+    gw_counts,
+    gw_sample_medians,
+    load_results,
+    network_snr,
+    selection_percentiles,
+    setting,
+    snr_robustness,
+    solver_summary,
+    yields,
 )
+from ultrasat_gw_followup.probability.rate import MERGER_RATE
 
 #: Final tables, one directory per GWTC-5.0 population model. The paper is
 #: built from the PixelPop set; the FullPop one is kept for comparison.
 RESULTS = Path("results")
 DEFAULT_RESULTS = RESULTS / "pixelpop"
 
-RUNS = ("O5a", "O5b", "O5c")
+#: Outputs, likewise one directory per population model.
+PAPER_OUTPUTS = Path("paper_outputs")
 
+#: Suffix the macro names give each sub-period.
+LETTER = dict(zip(RUNS, "ABC"))
 
-#: Scheduler settings that must be identical for the comparison to be
-#: controlled. ``absmag_mean`` is deliberately absent: it is the same source
-#: evaluated in two different bands.
-MATCHED = (
-    "delay",
-    "deadline",
-    "visits",
-    "exptime_min",
-    "exptime_max",
-    "nside",
-    "cutoff",
-    "absmag_stdev",
-    "bandpass",
-)
-
-#: Bins of the area and distance histograms.
-AREA_BINS = (0, 100, 500, 1000, 2000, 5000, np.inf)  # deg^2
-AREA_LABELS = ("<100", "100–500", "500–1k", "1k–2k", "2k–5k", ">5k")
-DISTANCE_BINS = (0, 200, 300, 400, 500, 700, np.inf)  # Mpc
-DISTANCE_LABELS = ("<200", "200–300", "300–400", "400–500", "500–700", ">700")
-
-#: Network SNR thresholds of the robustness test.
-SNR_THRESHOLDS = (8, 10, 12)
+#: Macro prefix and report label of each scheduled mission.
+MISSIONS = (("us", "ULTRASAT LCS"), ("as", "ULTRASAT AllSS"), ("uv", "UVEX"))
 
 #: Categorical colours (validated for colour-vision deficiencies).
 COLORS = {"ULTRASAT": "#2a78d6", "UVEX": "#eb6834"}
 
 
 # -----------------------------------------------------------------------------
-# Data
+# Numbers
+#
+# Each section below returns ``{macro name: (value, format)}``; collect_numbers
+# merges them in the order the paper reads and formats them in one pass. The
+# format is the precision the paper prints, and the only place it is chosen.
 # -----------------------------------------------------------------------------
-@dataclass
-class Results:
-    """Scheduling results of one mission, restricted to O5 and sorted by event."""
-
-    name: str
-    path: Path
-    table: QTable
-    population: str  # GWTC-5.0 population model of the sample
-    key: np.ndarray  # "run:coinc_event_id"
-    run: np.ndarray
-    weight: np.ndarray  # expected events per year represented by each event
-    objective: np.ndarray
-    best_bound: np.ndarray
-    pdet: np.ndarray
-    status: np.ndarray
-    distance: np.ndarray  # true luminosity distance (Mpc)
-    area: np.ndarray  # 90% credible area (deg^2)
-    source_class: np.ndarray
-    num_fields: np.ndarray
-    cutoff: float
-
-    @property
-    def selected(self) -> np.ndarray:
-        return self.objective >= self.cutoff
-
-    def n_selected(self, mask=True) -> float:
-        """Expected number of selected events per year (summed over the mask)."""
-        return self.weight[self.selected & mask].sum()
-
-    def n_detected(self, mask=True) -> float:
-        """Expected number of detected kilonovae per year (summed over the mask)."""
-        return (self.weight * self.pdet)[self.selected & mask].sum()
-
-
-def _column(table, name, dtype=float):
-    return np.asarray(table[name], dtype)
-
-
-def load_results(path, name) -> Results:
-    """Read one post-processed result table."""
-    table = QTable.read(path)
-    population = table.meta.get("population_model", DEFAULT_POPULATION)
-    if population not in MERGER_RATE:
-        raise SystemExit(f"{path}: unknown population model {population!r}")
-    merger_rate = MERGER_RATE[population]["mid"]
-    rates = {
-        run: rate.to_value("Gpc-3 yr-1")
-        for run, rate in table.meta["effective_rate"].items()
-    }
-    table = table[np.isin(np.asarray(table["run"]).astype(str), RUNS)]
-    key = np.array([f"{r}:{e}" for r, e in zip(table["run"], table["coinc_event_id"])])
-    order = np.argsort(key)
-    table, key = table[order], key[order]
-    run = np.asarray(table["run"]).astype(str)
-    return Results(
-        name=name,
-        path=Path(path),
-        table=table,
-        population=population,
-        key=key,
-        run=run,
-        weight=np.array([merger_rate / rates[r] for r in run]),
-        objective=np.nan_to_num(_column(table, "objective_value")),
-        best_bound=np.nan_to_num(_column(table, "best_bound")),
-        pdet=np.nan_to_num(_column(table, "detection_probability_known_position")),
-        status=np.asarray(table["solution_status"]).astype(str),
-        distance=_column(table, "distance"),
-        area=_column(table, "area(90)"),
-        source_class=np.asarray(table["source_class"]).astype(str),
-        num_fields=_column(table, "num_fields"),
-        cutoff=float(table["cutoff"][0]),
-    )
-
-
-def network_snr(results: Results, scenarios) -> np.ndarray:
-    """Network SNR of each event of a result table.
-
-    Taken from the ``network_snr`` column when postprocess wrote one, and
-    otherwise from the observing-scenarios table, matched on
-    ``(run, coinc_event_id)``.
+def collect_numbers(us, al, uv, snr) -> dict:
+    """Every number quoted in the text, as LaTeX macro name -> formatted value.
 
     Parameters
     ----------
-    results : Results
-        Mission whose events set the order of the output.
-    scenarios : str or pathlib.Path
-        Observing-scenarios event table, used as the fallback source.
+    us, al, uv : Results
+        ULTRASAT on the LCS grid, ULTRASAT on the all-sky grid, and UVEX.
+    snr : numpy.ndarray
+        Network SNR of each event, in the order of the tables.
 
     Returns
     -------
-    numpy.ndarray
-        One network SNR per event of ``results``, in its order.
+    dict
     """
-    if "network_snr" in results.table.colnames:
-        return _column(results.table, "network_snr")
-
-    table = QTable.read(scenarios)
-    snr = {
-        f"{r}:{e}": s
-        for r, e, s in zip(table["run"], table["coinc_event_id"], _column(table, "snr"))
-    }
-    missing = [key for key in results.key if key not in snr]
-    if missing:
-        raise SystemExit(
-            f"{len(missing)} events missing from {scenarios}, e.g. {missing[0]}"
-        )
-    return np.array([snr[key] for key in results.key])
-
-
-def check_consistency(*missions: Results) -> None:
-    """Stop if the missions hold different events or differ in a matched setting."""
-    reference = missions[0]
-    for m in missions[1:]:
-        if not np.array_equal(m.key, reference.key):
-            raise SystemExit(f"{m.name} and {reference.name} hold different events")
-        if m.population != reference.population:
-            raise SystemExit(
-                f"{m.name} is {m.population} but {reference.name} is "
-                f"{reference.population}; the merger-rate priors differ"
-            )
-    problems = []
-    for column in MATCHED:
-        values = {
-            m.name: tuple(sorted(set(np.asarray(m.table[column]).astype(str))))
-            for m in missions
-            if column in m.table.colnames
-        }
-        if len(set(values.values())) > 1:
-            problems.append(f"  {column}: {values}")
-    if problems:
-        raise SystemExit("Settings differ between missions:\n" + "\n".join(problems))
-
-
-# -----------------------------------------------------------------------------
-# Statistics
-# -----------------------------------------------------------------------------
-def weighted_quantile(values, weights, q) -> float:
-    """Weighted quantile with the ``inverted_cdf`` convention of numpy."""
-    order = np.argsort(values)
-    cumulative = np.cumsum(np.asarray(weights, float)[order])
-    index = np.searchsorted(cumulative, q * cumulative[-1])
-    return float(np.asarray(values)[order][min(index, len(values) - 1)])
-
-
-def yields(m: Results) -> dict:
-    """Selected and detected counts per sub-period and over O5."""
-    out = {r: (m.n_selected(m.run == r), m.n_detected(m.run == r)) for r in RUNS}
-    out["O5"] = (m.n_selected(), m.n_detected())
-    return out
-
-
-def gw_counts(m: Results) -> dict:
-    """Expected BNS and NSBH GW detections per sub-period and over O5."""
-    out = {r: m.weight[m.run == r].sum() for r in RUNS}
-    out["O5"] = m.weight.sum()
-    return out
-
-
-def selection_percentiles(m: Results, run: str) -> dict:
-    """90th percentiles shown in the boxes of the area--distance figures."""
-    r = m.run == run
-    s = r & m.selected
-    return {
-        "DistAll": np.quantile(m.distance[r], 0.9, method="inverted_cdf"),
-        "DistTrig": np.quantile(m.distance[s], 0.9, method="inverted_cdf"),
-        "DistDet": weighted_quantile(m.distance[s], m.pdet[s], 0.9),
-        "AreaTrig": np.quantile(m.area[s], 0.9, method="inverted_cdf"),
-        "AreaDet": weighted_quantile(m.area[s], m.pdet[s], 0.9),
-    }
-
-
-def gw_sample_medians(m: Results) -> dict:
-    """Median 90% area and distance of the BNS and NSBH sample, per sub-period."""
-    return {
-        r: (np.median(m.area[m.run == r]), np.median(m.distance[m.run == r]))
-        for r in RUNS
-    }
-
-
-def binned(m: Results, values, edges) -> list:
-    """Detected counts over O5 in each bin of ``values``."""
-    return [m.n_detected((values >= lo) & (values < hi)) for lo, hi in pairwise(edges)]
-
-
-def solver_summary(m: Results) -> dict:
-    """How far the solver went: time limit, crashes, and bounds on what it missed."""
-    limited = m.status == "time limit exceeded"
-    crashed = np.char.startswith(m.status, "CPLEX Error")
-    # Not selected, but CPLEX could not rule out a plan above the cutoff.
-    undecided = ~m.selected & (m.best_bound >= m.cutoff)
-    sel_limited = m.selected & limited
-    gap = (m.best_bound - m.objective)[sel_limited] / m.objective[sel_limited]
-    return {
-        "limited_pct": 100 * limited.mean(),
-        "crashed_pct": 100 * crashed.mean(),
-        "limited_share_pct": 100 * m.n_detected(limited) / m.n_detected(),
-        "undecided": m.weight[undecided].sum(),
-        "median_gap_pct": 100 * np.median(gap) if gap.size else 0.0,
-    }
-
-
-def complementarity(us: Results, uv: Results) -> dict:
-    """Events selected by one mission only, and the best of both per event."""
-    us_only = us.selected & ~uv.selected
-    pdet_us = np.where(us.selected, us.pdet, 0)
-    pdet_uv = np.where(uv.selected, uv.pdet, 0)
-    return {
-        "us_only_sel": us.weight[us_only].sum(),
-        "us_only_det": (us.weight * us.pdet)[us_only].sum(),
-        "us_only_area": np.median(us.area[us_only]),
-        "uv_only_sel": uv.weight[uv.selected & ~us.selected].sum(),
-        "best_of_both": (us.weight * np.maximum(pdet_us, pdet_uv)).sum(),
-    }
-
-
-def snr_robustness(snr, *missions: Results) -> dict:
-    """Fraction of GW events and of detections kept above each SNR threshold."""
-    w = missions[0].weight
-    out = {}
-    for threshold in SNR_THRESHOLDS:
-        keep = snr >= threshold
-        out[threshold] = {"GW": w[keep].sum() / w.sum()} | {
-            m.name: m.n_detected(keep) / m.n_detected() for m in missions
-        }
-    return out
-
-
-# -----------------------------------------------------------------------------
-# Outputs
-# -----------------------------------------------------------------------------
-def collect_numbers(us, al, uv, snr) -> dict:
-    """Every number quoted in the text, as LaTeX macro name -> formatted value."""
     y = {"us": yields(us), "as": yields(al), "uv": yields(uv)}
     gw = gw_counts(us)
-    letter = dict(zip(RUNS, "ABC"))
-    n = {}
-
-    def put(name, value, fmt):
-        n[name] = format(value, fmt)
-
-    # Yields per sub-period.
-    for r in RUNS:
-        L = letter[r]
-        put(f"gw{L}", gw[r], ".1f")
-        for p in y:
-            put(f"{p}Sel{L}", y[p][r][0], ".2f")
-            put(f"{p}Det{L}", y[p][r][1], ".2f")
-        put(f"ratioDet{L}", y["uv"][r][1] / y["us"][r][1], ".1f")
-
-    # O5 totals, efficiencies and growth.
-    for p, m in (("us", us), ("as", al), ("uv", uv)):
-        put(f"{p}SelTot", y[p]["O5"][0], ".1f")
-        put(f"{p}DetTot", y[p]["O5"][1], ".2f")
-        eff = [100 * y[p][r][1] / y[p][r][0] for r in RUNS]
-        put(f"{p}EffMin", min(eff), ".0f")
-        put(f"{p}EffMax", max(eff), ".0f")
-        put(f"{p}Growth", y[p]["O5c"][1] / y[p]["O5a"][1], ".2f")
-        put(f"{p}DetBNS", m.n_detected(m.source_class == "BNS"), ".2f")
-        put(f"{p}DetNSBH", m.n_detected(m.source_class == "NSBH"), ".2f")
-        put(f"{p}FieldsMed", np.median(m.num_fields[m.selected]), ".0f")
-    put("gwTot", gw["O5"], ".1f")
-    put("gwGrowth", gw["O5c"] / gw["O5a"], ".2f")
-    put("gwGrowthAB", 100 * (gw["O5b"] / gw["O5a"] - 1), ".0f")
-    put("usGrowthAB", 100 * (y["us"]["O5b"][1] / y["us"]["O5a"][1] - 1), ".0f")
-    put("uvGrowthAB", 100 * (y["uv"]["O5b"][1] / y["uv"]["O5a"][1] - 1), ".0f")
-    put("usGrowthBC", 100 * (y["us"]["O5c"][1] / y["us"]["O5b"][1] - 1), ".0f")
-    put("usDetFracGW", 100 * y["us"]["O5"][1] / gw["O5"], ".0f")
-    put("ratioDetTot", y["uv"]["O5"][1] / y["us"]["O5"][1], ".1f")
-    for r, (area, dist) in gw_sample_medians(us).items():
-        put(f"gwAreaMed{letter[r]}", area, ".0f")
-        put(f"gwDistMed{letter[r]}", dist, ".0f")
-
-    # Percentiles of the LCS area--distance figures.
-    for r in RUNS:
-        for k, v in selection_percentiles(us, r).items():
-            put(f"us{k}{letter[r]}", v, ".0f")
-
-    # Grid comparison.
-    a = us.run == "O5a"
-    put("gridNlcsA", np.sum(us.selected & a), "d")
-    put("gridNallA", np.sum(al.selected & a), "d")
-    put("gridNcommonA", np.sum(us.selected & al.selected & a), "d")
-    put("gridNlcsOnlyA", np.sum(us.selected & ~al.selected & a), "d")
-    put("gridNallOnlyA", np.sum(al.selected & ~us.selected & a), "d")
-    put(
-        "gridSelDiff",
-        100 * max(abs(y["as"][r][0] / y["us"][r][0] - 1) for r in RUNS),
-        ".0f",
+    missions = (("us", us), ("as", al), ("uv", uv))
+    values = (
+        _per_run(y, gw)
+        | _totals(y, gw, missions, us)
+        | _percentiles(us)
+        | _grids(y, us, al)
+        | _detection_origins(us, uv)
+        | _both_missions(y, us, uv)
+        | _snr_losses(snr, us, uv)
+        | _solver(missions)
     )
-    put(
-        "gridDetDiff",
-        100 * max(abs(y["as"][r][1] / y["us"][r][1] - 1) for r in RUNS),
-        ".0f",
-    )
-    put("gridDetDiffTot", 100 * abs(y["as"]["O5"][1] / y["us"]["O5"][1] - 1), ".0f")
+    return {name: format(value, fmt) for name, (value, fmt) in values.items()}
 
-    # Where the detections come from.
-    w = us.weight
+
+def _per_run(y, gw) -> dict:
+    """Selected and detected counts of each sub-period."""
+    out = {}
+    for run in RUNS:
+        letter = LETTER[run]
+        out[f"gw{letter}"] = (gw[run], ".1f")
+        for prefix in y:
+            out[f"{prefix}Sel{letter}"] = (y[prefix][run][0], ".2f")
+            out[f"{prefix}Det{letter}"] = (y[prefix][run][1], ".2f")
+        out[f"ratioDet{letter}"] = (y["uv"][run][1] / y["us"][run][1], ".1f")
+    return out
+
+
+def _totals(y, gw, missions, sample) -> dict:
+    """O5 totals, detection efficiency, and growth over the sub-periods.
+
+    ``sample`` provides the GW event sample, which the three tables share.
+    """
+    out = {}
+    for prefix, m in missions:
+        efficiency = [100 * y[prefix][r][1] / y[prefix][r][0] for r in RUNS]
+        out[f"{prefix}SelTot"] = (y[prefix]["O5"][0], ".1f")
+        out[f"{prefix}DetTot"] = (y[prefix]["O5"][1], ".2f")
+        out[f"{prefix}EffMin"] = (min(efficiency), ".0f")
+        out[f"{prefix}EffMax"] = (max(efficiency), ".0f")
+        out[f"{prefix}Growth"] = (y[prefix]["O5c"][1] / y[prefix]["O5a"][1], ".2f")
+        out[f"{prefix}DetBNS"] = (m.n_detected(m.source_class == "BNS"), ".2f")
+        out[f"{prefix}DetNSBH"] = (m.n_detected(m.source_class == "NSBH"), ".2f")
+        out[f"{prefix}FieldsMed"] = (np.median(m.num_fields[m.selected]), ".0f")
+
+    out["gwTot"] = (gw["O5"], ".1f")
+    out["gwGrowth"] = (gw["O5c"] / gw["O5a"], ".2f")
+    out["gwGrowthAB"] = (100 * (gw["O5b"] / gw["O5a"] - 1), ".0f")
+    out["usGrowthAB"] = (100 * (y["us"]["O5b"][1] / y["us"]["O5a"][1] - 1), ".0f")
+    out["uvGrowthAB"] = (100 * (y["uv"]["O5b"][1] / y["uv"]["O5a"][1] - 1), ".0f")
+    out["usGrowthBC"] = (100 * (y["us"]["O5c"][1] / y["us"]["O5b"][1] - 1), ".0f")
+    out["usDetFracGW"] = (100 * y["us"]["O5"][1] / gw["O5"], ".0f")
+    out["ratioDetTot"] = (y["uv"]["O5"][1] / y["us"]["O5"][1], ".1f")
+
+    for run, (area, distance) in gw_sample_medians(sample).items():
+        out[f"gwAreaMed{LETTER[run]}"] = (area, ".0f")
+        out[f"gwDistMed{LETTER[run]}"] = (distance, ".0f")
+    return out
+
+
+def _percentiles(us) -> dict:
+    """90th percentiles written in the boxes of the LCS area-distance figures."""
+    return {
+        f"us{key}{LETTER[run]}": (value, ".0f")
+        for run in RUNS
+        for key, value in selection_percentiles(us, run).items()
+    }
+
+
+def _grids(y, us, al) -> dict:
+    """The two sky grids: how the O5a selections overlap, and the spread."""
+    o5a = us.run == "O5a"
+
+    def spread(index):
+        """Largest relative difference between the grids, over the sub-periods."""
+        return 100 * max(abs(y["as"][r][index] / y["us"][r][index] - 1) for r in RUNS)
+
+    return {
+        "gridNlcsA": (np.sum(us.selected & o5a), "d"),
+        "gridNallA": (np.sum(al.selected & o5a), "d"),
+        "gridNcommonA": (np.sum(us.selected & al.selected & o5a), "d"),
+        "gridNlcsOnlyA": (np.sum(us.selected & ~al.selected & o5a), "d"),
+        "gridNallOnlyA": (np.sum(al.selected & ~us.selected & o5a), "d"),
+        "gridSelDiff": (spread(0), ".0f"),
+        "gridDetDiff": (spread(1), ".0f"),
+        "gridDetDiffTot": (100 * abs(y["as"]["O5"][1] / y["us"]["O5"][1] - 1), ".0f"),
+    }
+
+
+def _detection_origins(us, uv) -> dict:
+    """Which localization areas and which distances the detections come from."""
+    weight = us.weight
     small, large = us.area < 500, us.area >= 2000
-    put("usDetSmallArea", us.n_detected(small), ".1f")
-    put("uvDetSmallArea", uv.n_detected(small), ".1f")
-    put("usDetLargeArea", us.n_detected(large), ".2f")
-    put("uvDetLargeArea", uv.n_detected(large), ".2f")
-    put("gwLargeAreaPct", 100 * w[large].sum() / w.sum(), ".0f")
-    put("usDetLargeAreaPct", 100 * us.n_detected(large) / w[large].sum(), ".1f")
-    put("usDetSmallAreaPct", 100 * us.n_detected(small) / us.n_detected(), ".0f")
     near, far = us.distance < 200, us.distance >= 700
-    put("usDetNear", us.n_detected(near), ".1f")
-    put("uvDetNear", uv.n_detected(near), ".1f")
-    put("usDetFar", us.n_detected(far), ".1f")
-    put("uvDetFar", uv.n_detected(far), ".1f")
 
-    # Fraction of the GW events of a bin whose kilonova ULTRASAT detects.
-    def detected_fraction(mask):
-        return 100 * us.n_detected(mask) / w[mask].sum()
+    def gw_fraction(mask):
+        """Share of the GW events of a bin whose kilonova ULTRASAT detects."""
+        return 100 * us.n_detected(mask) / weight[mask].sum()
 
-    put("usFracAreaSmallest", detected_fraction(us.area < 100), ".0f")
-    put("usFracAreaMid", detected_fraction((us.area >= 1000) & (us.area < 2000)), ".0f")
-    put("usFracDistNearest", detected_fraction(us.distance < 200), ".0f")
-    put(
-        "usFracDistMid",
-        detected_fraction((us.distance >= 500) & (us.distance < 700)),
-        ".0f",
-    )
+    return {
+        "usDetSmallArea": (us.n_detected(small), ".1f"),
+        "uvDetSmallArea": (uv.n_detected(small), ".1f"),
+        "usDetLargeArea": (us.n_detected(large), ".2f"),
+        "uvDetLargeArea": (uv.n_detected(large), ".2f"),
+        "gwLargeAreaPct": (100 * weight[large].sum() / weight.sum(), ".0f"),
+        "usDetLargeAreaPct": (100 * us.n_detected(large) / weight[large].sum(), ".1f"),
+        "usDetSmallAreaPct": (100 * us.n_detected(small) / us.n_detected(), ".0f"),
+        "usDetNear": (us.n_detected(near), ".1f"),
+        "uvDetNear": (uv.n_detected(near), ".1f"),
+        "usDetFar": (us.n_detected(far), ".1f"),
+        "uvDetFar": (uv.n_detected(far), ".1f"),
+        "usFracAreaSmallest": (gw_fraction(us.area < 100), ".0f"),
+        "usFracAreaMid": (gw_fraction((us.area >= 1000) & (us.area < 2000)), ".0f"),
+        "usFracDistNearest": (gw_fraction(us.distance < 200), ".0f"),
+        "usFracDistMid": (
+            gw_fraction((us.distance >= 500) & (us.distance < 700)),
+            ".0f",
+        ),
+    }
 
-    # Complementarity.
+
+def _both_missions(y, us, uv) -> dict:
+    """What only ULTRASAT selects, and the yield of the two missions together."""
     c = complementarity(us, uv)
-    put("usOnlySel", c["us_only_sel"], ".1f")
-    put("usOnlyDet", c["us_only_det"], ".1f")
-    put("usOnlyArea", c["us_only_area"], ".0f")
-    put("bestOfBoth", c["best_of_both"], ".1f")
-    put("bestOfBothGainPct", 100 * (c["best_of_both"] / y["uv"]["O5"][1] - 1), ".0f")
+    return {
+        "usOnlySel": (c["us_only_sel"], ".1f"),
+        "usOnlyDet": (c["us_only_det"], ".1f"),
+        "usOnlyArea": (c["us_only_area"], ".0f"),
+        "bestOfBoth": (c["best_of_both"], ".1f"),
+        "bestOfBothGainPct": (100 * (c["best_of_both"] / y["uv"]["O5"][1] - 1), ".0f"),
+    }
 
-    # Robustness to the GW detection criterion.
+
+def _snr_losses(snr, us, uv) -> dict:
+    """Yield lost when the GW detection threshold is raised above the nominal 8."""
     robust = snr_robustness(snr, us, uv)
+    out = {}
     for threshold in SNR_THRESHOLDS[1:]:
-        r = robust[threshold]
-        put(f"snrGwLoss{threshold}", 100 * (1 - r["GW"]), ".0f")
-        put(f"snrUsLoss{threshold}", 100 * (1 - r["ULTRASAT"]), ".0f")
-        put(f"snrUvLoss{threshold}", 100 * (1 - r["UVEX"]), ".0f")
+        kept = robust[threshold]
+        out[f"snrGwLoss{threshold}"] = (100 * (1 - kept["GW"]), ".0f")
+        out[f"snrUsLoss{threshold}"] = (100 * (1 - kept["ULTRASAT"]), ".0f")
+        out[f"snrUvLoss{threshold}"] = (100 * (1 - kept["UVEX"]), ".0f")
+    return out
 
-    # Solver convergence.
-    for p, m in (("us", us), ("as", al), ("uv", uv)):
+
+def _solver(missions) -> dict:
+    """How far the solver got on each mission."""
+    out = {}
+    for prefix, m in missions:
         s = solver_summary(m)
-        put(f"{p}LimitPct", s["limited_pct"], ".0f")
-        put(f"{p}LimitSharePct", s["limited_share_pct"], ".0f")
-        put(f"{p}CrashPct", s["crashed_pct"], ".1f")
-        put(f"{p}GapPct", s["median_gap_pct"], ".0f")
-        put(f"{p}Undecided", s["undecided"], ".1f")
-    return n
+        out[f"{prefix}LimitPct"] = (s["limited_pct"], ".0f")
+        out[f"{prefix}LimitSharePct"] = (s["limited_share_pct"], ".0f")
+        out[f"{prefix}CrashPct"] = (s["crashed_pct"], ".1f")
+        out[f"{prefix}GapPct"] = (s["median_gap_pct"], ".0f")
+        out[f"{prefix}Undecided"] = (s["undecided"], ".1f")
+    return out
 
 
+# -----------------------------------------------------------------------------
+# LaTeX
+# -----------------------------------------------------------------------------
 def write_numbers(path, numbers, sources) -> None:
+    """Write one ``\\newcommand`` per number, after the tables they come from."""
     lines = ["% Generated by ugf-paper-results. Do not edit."]
     lines += [f"% {name}: {src}" for name, src in sources.items()]
     lines += [f"\\newcommand{{\\{k}}}{{{v}}}" for k, v in numbers.items()]
     Path(path).write_text("\n".join(lines) + "\n")
-
-
-def setting(results: Results, column) -> str:
-    """The single value a scheduler setting takes across a result table.
-
-    Raises
-    ------
-    SystemExit
-        If the table holds more than one, which would make a caption quoting
-        it wrong for part of the rows.
-    """
-    values = {str(value) for value in results.table[column]}
-    if len(values) != 1:
-        raise SystemExit(
-            f"{results.path}: several values of {column}: {sorted(values)}"
-        )
-    return values.pop()
 
 
 def write_comparison_table(path, us, uv) -> None:
@@ -549,6 +337,9 @@ Run & GW & Sel. & Det. & Sel. & Det. & Ratio \\
     )
 
 
+# -----------------------------------------------------------------------------
+# Figure
+# -----------------------------------------------------------------------------
 def plot_detections_by_area_distance(path, us, uv) -> None:
     """Detected kilonovae over O5 per bin of area and of distance.
 
@@ -681,87 +472,100 @@ def check_claims(n: dict, us: Results, uv: Results) -> list:
     ]
 
 
-def print_report(n: dict, claims: list, us, al, uv) -> None:
-    """Every quoted number, grouped by section, then the checks of the text."""
-    print("Yields per year (lambda)          O5a     O5b     O5c      O5")
-    print(
-        f"  GW (BNS + NSBH)              {n['gwA']:>7} {n['gwB']:>7} {n['gwC']:>7} {n['gwTot']:>7}"
-    )
-    for p, label in (("us", "ULTRASAT LCS"), ("as", "ULTRASAT AllSS"), ("uv", "UVEX")):
-        print(
-            f"  {label:16s} selected   {n[p + 'SelA']:>7} {n[p + 'SelB']:>7} {n[p + 'SelC']:>7} {n[p + 'SelTot']:>7}"
-        )
-        print(
-            f"  {'':16s} detected   {n[p + 'DetA']:>7} {n[p + 'DetB']:>7} {n[p + 'DetC']:>7} {n[p + 'DetTot']:>7}"
-        )
-    print(
-        f"  UVEX / ULTRASAT detected     {n['ratioDetA']:>7} {n['ratioDetB']:>7} {n['ratioDetC']:>7} {n['ratioDetTot']:>7}"
-    )
+def _per_run_line(label, n, name) -> str:
+    """One ``label  O5a O5b O5c O5`` line, from the macros ``nameA..nameTot``."""
+    cells = [n[f"{name}{letter}"] for letter in "ABC"] + [n[f"{name}Tot"]]
+    return f"  {label:28s}" + "".join(f"{cell:>8}" for cell in cells)
 
-    print("\n90th percentiles, LCS             O5a / O5b / O5c")
-    for k in ("DistAll", "DistTrig", "DistDet", "AreaTrig", "AreaDet"):
-        print(
-            f"  {k:9s} {n['us' + k + 'A']} / {n['us' + k + 'B']} / {n['us' + k + 'C']}"
-        )
+
+def print_report(n: dict, claims: list, us, al, uv) -> None:
+    """Every quoted number, grouped as the paper reads, then the checks."""
+    header = "Yields per year (lambda)"
+    print(f"  {header:28s}" + "".join(f"{h:>8}" for h in (*RUNS, "O5")))
+    print(_per_run_line("GW (BNS + NSBH)", n, "gw"))
+    for prefix, label in MISSIONS:
+        print(_per_run_line(f"{label} selected", n, f"{prefix}Sel"))
+        print(_per_run_line(f"{label} detected", n, f"{prefix}Det"))
+    print(_per_run_line("UVEX / ULTRASAT detected", n, "ratioDet"))
+
+    print("\n90th percentiles, ULTRASAT LCS    O5a / O5b / O5c")
+    for key in ("DistAll", "DistTrig", "DistDet", "AreaTrig", "AreaDet"):
+        values = " / ".join(n[f"us{key}{letter}"] for letter in "ABC")
+        print(f"  {key:9s} {values}")
     print(
-        f"  detected fraction of GW events: {n['usFracAreaSmallest']}% (<100 deg2), "
-        f"{n['usFracAreaMid']}% (1000-2000 deg2), {n['usFracDistNearest']}% (<200 Mpc), "
-        f"{n['usFracDistMid']}% (500-700 Mpc)"
+        f"  detected share of the GW events: {n['usFracAreaSmallest']}% (<100 deg2), "
+        f"{n['usFracAreaMid']}% (1000-2000 deg2), "
+        f"{n['usFracDistNearest']}% (<200 Mpc), {n['usFracDistMid']}% (500-700 Mpc)"
     )
 
     print("\nULTRASAT LCS")
     print(
-        f"  detected over O5: {n['usDetTot']} ({n['usDetBNS']} BNS, {n['usDetNSBH']} NSBH); "
-        f"detected/selected {n['usEffMin']}-{n['usEffMax']}%; {n['usDetFracGW']}% of GW events"
+        f"  detected over O5: {n['usDetTot']} "
+        f"({n['usDetBNS']} BNS, {n['usDetNSBH']} NSBH); "
+        f"detected/selected {n['usEffMin']}-{n['usEffMax']}%; "
+        f"{n['usDetFracGW']}% of the GW events"
     )
     print(
-        f"  growth O5a->O5c: GW x{n['gwGrowth']}, ULTRASAT x{n['usGrowth']}, UVEX x{n['uvGrowth']}"
+        f"  growth O5a->O5c: GW x{n['gwGrowth']}, "
+        f"ULTRASAT x{n['usGrowth']}, UVEX x{n['uvGrowth']}"
     )
     print(
-        f"  O5a->O5b: GW +{n['gwGrowthAB']}%, ULTRASAT +{n['usGrowthAB']}%, UVEX +{n['uvGrowthAB']}%;"
-        f" O5b->O5c ULTRASAT +{n['usGrowthBC']}%"
+        f"  O5a->O5b: GW +{n['gwGrowthAB']}%, ULTRASAT +{n['usGrowthAB']}%, "
+        f"UVEX +{n['uvGrowthAB']}%; O5b->O5c ULTRASAT +{n['usGrowthBC']}%"
     )
     print(
-        f"  GW sample medians, area (deg2): {n['gwAreaMedA']} / {n['gwAreaMedB']} / {n['gwAreaMedC']}; "
-        f"distance (Mpc): {n['gwDistMedA']} / {n['gwDistMedB']} / {n['gwDistMedC']}"
+        f"  GW sample medians, area (deg2): "
+        f"{n['gwAreaMedA']} / {n['gwAreaMedB']} / {n['gwAreaMedC']}; "
+        f"distance (Mpc): "
+        f"{n['gwDistMedA']} / {n['gwDistMedB']} / {n['gwDistMedC']}"
     )
 
     print("\nSky grids")
     print(
-        f"  O5a selected: LCS {n['gridNlcsA']}, AllSS {n['gridNallA']}, common {n['gridNcommonA']}, "
-        f"LCS only {n['gridNlcsOnlyA']}, AllSS only {n['gridNallOnlyA']}"
+        f"  O5a selected: LCS {n['gridNlcsA']}, AllSS {n['gridNallA']}, "
+        f"common {n['gridNcommonA']}, LCS only {n['gridNlcsOnlyA']}, "
+        f"AllSS only {n['gridNallOnlyA']}"
     )
     print(
-        f"  max difference per sub-period: selected {n['gridSelDiff']}%, detected {n['gridDetDiff']}%;"
-        f" O5 detected {n['gridDetDiffTot']}%"
+        f"  largest difference per sub-period: selected {n['gridSelDiff']}%, "
+        f"detected {n['gridDetDiff']}%; over O5 detected {n['gridDetDiffTot']}%"
     )
 
     print("\nULTRASAT and UVEX")
     print(
-        f"  detected/selected: ULTRASAT {n['usEffMin']}-{n['usEffMax']}%, UVEX {n['uvEffMin']}-{n['uvEffMax']}%;"
-        f" median fields per plan {n['usFieldsMed']} vs {n['uvFieldsMed']}"
+        f"  detected/selected: ULTRASAT {n['usEffMin']}-{n['usEffMax']}%, "
+        f"UVEX {n['uvEffMin']}-{n['uvEffMax']}%; "
+        f"median fields per plan {n['usFieldsMed']} vs {n['uvFieldsMed']}"
     )
     print(
-        f"  areas < 500 deg2: {n['usDetSmallArea']} vs {n['uvDetSmallArea']};"
-        f" > 2000 deg2 ({n['gwLargeAreaPct']}% of GW): {n['usDetLargeArea']} vs {n['uvDetLargeArea']}"
+        f"  areas < 500 deg2: {n['usDetSmallArea']} vs {n['uvDetSmallArea']}; "
+        f"> 2000 deg2 ({n['gwLargeAreaPct']}% of the GW events): "
+        f"{n['usDetLargeArea']} vs {n['uvDetLargeArea']}"
     )
     print(
-        f"  distances < 200 Mpc: {n['usDetNear']} vs {n['uvDetNear']}; > 700 Mpc: {n['usDetFar']} vs {n['uvDetFar']}"
+        f"  distances < 200 Mpc: {n['usDetNear']} vs {n['uvDetNear']}; "
+        f"> 700 Mpc: {n['usDetFar']} vs {n['uvDetFar']}"
     )
     print(
-        f"  ULTRASAT only: {n['usOnlySel']} selected, {n['usOnlyDet']} detected, median area {n['usOnlyArea']} deg2;"
-        f" best of both {n['bestOfBoth']} (+{n['bestOfBothGainPct']}% over UVEX)"
+        f"  ULTRASAT only: {n['usOnlySel']} selected, {n['usOnlyDet']} detected, "
+        f"median area {n['usOnlyArea']} deg2; best of both {n['bestOfBoth']} "
+        f"(+{n['bestOfBothGainPct']}% over UVEX)"
     )
 
     print("\nLimitations")
-    for t in SNR_THRESHOLDS[1:]:
+    for threshold in SNR_THRESHOLDS[1:]:
         print(
-            f"  SNR >= {t}: GW -{n[f'snrGwLoss{t}']}%, ULTRASAT -{n[f'snrUsLoss{t}']}%, UVEX -{n[f'snrUvLoss{t}']}%"
+            f"  SNR >= {threshold}: GW -{n[f'snrGwLoss{threshold}']}%, "
+            f"ULTRASAT -{n[f'snrUsLoss{threshold}']}%, "
+            f"UVEX -{n[f'snrUvLoss{threshold}']}%"
         )
-    for p, label in (("us", "ULTRASAT LCS"), ("as", "ULTRASAT AllSS"), ("uv", "UVEX")):
+    for prefix, label in MISSIONS:
         print(
-            f"  {label:15s} time limit {n[p + 'LimitPct']}% of events ({n[p + 'LimitSharePct']}% of detections),"
-            f" crashed {n[p + 'CrashPct']}%, median gap {n[p + 'GapPct']}%, undecided {n[p + 'Undecided']}/yr"
+            f"  {label:15s} time limit {n[prefix + 'LimitPct']}% of the events "
+            f"({n[prefix + 'LimitSharePct']}% of the detections), "
+            f"crashed {n[prefix + 'CrashPct']}%, "
+            f"median gap {n[prefix + 'GapPct']}%, "
+            f"undecided {n[prefix + 'Undecided']}/yr"
         )
 
     print("\nQualitative statements in the text:")
@@ -788,7 +592,11 @@ def parse_args(argv=None):
         help="observing-scenarios table, read only when the result tables "
         "carry no network_snr column",
     )
-    parser.add_argument("--outdir", default="paper_outputs", help="output directory")
+    parser.add_argument(
+        "--outdir",
+        type=Path,
+        help="output directory; defaults to paper_outputs/<population model>",
+    )
 
     args = parser.parse_args(argv)
     # Each table defaults to its own name inside --results-dir, so switching
@@ -804,6 +612,27 @@ def parse_args(argv=None):
     return args
 
 
+def output_paths(outdir, model) -> dict:
+    """Where each output goes, split the way the paper's LaTeX includes them.
+
+    Parameters
+    ----------
+    outdir : pathlib.Path
+        Root directory, usually ``paper_outputs/<model>``.
+    model : str
+        Population model of the tables, which names every file.
+
+    Returns
+    -------
+    dict
+    """
+    return {
+        "numbers": outdir / "tables" / f"numbers-{model}.tex",
+        "comparison": outdir / "tables" / f"mission_comparison-{model}.tex",
+        "figure": outdir / "figures" / f"detections_by_area_distance-{model}.pdf",
+    }
+
+
 def run(argv=None) -> dict:
     """Run the full analysis; return the numbers so a notebook can use them."""
     args = parse_args(argv)
@@ -813,11 +642,17 @@ def run(argv=None) -> dict:
     check_consistency(us, al, uv)
     snr = network_snr(us, args.scenarios)
 
-    out = Path(args.outdir)
-    out.mkdir(parents=True, exist_ok=True)
+    # The model comes from the tables, not from the directory they sit in, so
+    # the outputs are named after what was actually weighted.
+    model = us.population
+    out = args.outdir or PAPER_OUTPUTS / model
+    paths = output_paths(out, model)
+    for path in paths.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+
     numbers = collect_numbers(us, al, uv, snr)
     write_numbers(
-        out / "numbers.tex",
+        paths["numbers"],
         numbers,
         {
             "ULTRASAT LCS": args.lcs,
@@ -826,14 +661,13 @@ def run(argv=None) -> dict:
             "Scenarios": args.scenarios,
         },
     )
-    write_comparison_table(out / "mission_comparison.tex", us, uv)
-    plot_detections_by_area_distance(out / "detections_by_area_distance.pdf", us, uv)
+    write_comparison_table(paths["comparison"], us, uv)
+    plot_detections_by_area_distance(paths["figure"], us, uv)
 
     print_report(numbers, check_claims(numbers, us, uv), us, al, uv)
-    print(
-        f"\nWrote numbers.tex ({len(numbers)} macros), mission_comparison.tex and "
-        f"detections_by_area_distance.pdf to {out}/"
-    )
+    print(f"\n{len(numbers)} macros, from the GWTC-5.0 {model} model:")
+    for path in paths.values():
+        print(f"  {path}")
     return numbers
 
 

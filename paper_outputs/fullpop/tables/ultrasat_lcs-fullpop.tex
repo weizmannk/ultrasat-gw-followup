@@ -1,0 +1,30 @@
+\begin{table}[!htb]
+\centering
+\renewcommand\arraystretch{1.15}
+\setlength{\tabcolsep}{0.22cm}
+\caption{Expected number of GW events per year for ULTRASAT with the \emph{Low-Cadence Survey} (LCS) grid. \emph{Selected}: events for which the scheduler finds a plan with $P_\mathrm{obj} \geq 0.1$. \emph{Detected}: expected number of kilonovae recovered, i.e.\ the sum of $P_\mathrm{det}^\mathrm{known}$ over the selected events. $\lambda$ is the expected count at the median merger rate of 100\,$\mathrm{Gpc^{-3}\,yr^{-1}}$. The range is the 90\% credible interval, which includes both the merger-rate uncertainty and Poisson fluctuations. The O5 total rows combine O5a, O5b, O5c. The merger-rate prior is a single astrophysical rate shared by those runs, so its uncertainty is fully correlated across them: the aggregate adds the expected counts, $\lambda_\mathrm{tot} = \sum_r \lambda_r$, and its interval is re-derived from $\ln \lambda_\mathrm{tot}$ at the same prior width. Medians are not additive and must not be summed.}
+\label{tab:ultrasat-non-overlap-selected-detected-1yr}
+\begin{tabular}{llcccc}
+\toprule
+ & & \multicolumn{2}{c}{Selected} & \multicolumn{2}{c}{Detected} \\
+\cmidrule(lr){3-4} \cmidrule(lr){5-6}
+Run & Source & $\lambda$ & 90\% CI & $\lambda$ & 90\% CI \\
+\midrule
+\multirow{3}{*}{O5a} & BNS  & 4.05 & $3^{+6}_{-3}$ & 1.50 & $1^{+3}_{-1}$ \\
+                     & NSBH & 2.64 & $2^{+4}_{-2}$ & 0.96 & $0^{+2}_{-0}$ \\
+                     & All  & 6.68 & $6^{+9}_{-5}$ & 2.46 & $2^{+4}_{-2}$ \\
+\midrule
+\multirow{3}{*}{O5b} & BNS  & 4.98 & $4^{+7}_{-4}$ & 1.55 & $1^{+3}_{-1}$ \\
+                     & NSBH & 3.14 & $3^{+5}_{-3}$ & 1.05 & $0^{+3}_{-0}$ \\
+                     & All  & 8.12 & $8^{+10}_{-6}$ & 2.61 & $2^{+4}_{-2}$ \\
+\midrule
+\multirow{3}{*}{O5c} & BNS  & 6.27 & $6^{+8}_{-5}$ & 2.55 & $2^{+4}_{-2}$ \\
+                     & NSBH & 3.37 & $3^{+5}_{-3}$ & 1.23 & $1^{+3}_{-1}$ \\
+                     & All  & 9.64 & $9^{+12}_{-6}$ & 3.78 & $3^{+6}_{-3}$ \\
+\midrule
+\multirow{3}{*}{O5 total} & BNS  & 15.29 & $15^{+17}_{-9}$ & 5.60 & $5^{+7}_{-4}$ \\
+                          & NSBH & 9.15 & $9^{+11}_{-6}$ & 3.25 & $3^{+5}_{-3}$ \\
+                          & All  & 24.44 & $24^{+27}_{-14}$ & 8.85 & $8^{+11}_{-6}$ \\
+\bottomrule
+\end{tabular}
+\end{table}

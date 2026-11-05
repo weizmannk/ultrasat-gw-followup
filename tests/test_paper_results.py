@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from astropy.table import QTable
 
+from ultrasat_gw_followup.analysis import mission_yields
 from ultrasat_gw_followup.probability.rate import MERGER_RATE
 from ultrasat_gw_followup.workflow import paper_results
 
@@ -32,33 +33,34 @@ def test_the_priors_are_the_published_quantiles():
     }
 
 
-def test_paper_results_does_not_restate_the_rates():
+def test_the_rates_are_stated_once():
     """A second copy of the median is what let a wrong PixelPop value through."""
-    assert "MERGER_RATE = {" not in Path(paper_results.__file__).read_text()
+    for module in (mission_yields, paper_results):
+        assert "MERGER_RATE = {" not in Path(module.__file__).read_text()
 
 
 def test_the_pixelpop_tables_declare_their_model():
     """postprocess carries the model the unpacker recorded all the way through."""
     assert QTable.read(PIXELPOP).meta["population_model"] == "pixelpop"
-    assert paper_results.load_results(PIXELPOP, "ULTRASAT").population == "pixelpop"
+    assert mission_yields.load_results(PIXELPOP, "ULTRASAT").population == "pixelpop"
 
 
 @pytest.mark.skipif(not FULLPOP.exists(), reason="no fullpop tables in this checkout")
 def test_a_table_without_a_model_is_read_as_fullpop():
     """The fullpop tables predate the metadata; their numbers still stand."""
     assert "population_model" not in QTable.read(FULLPOP).meta
-    assert paper_results.load_results(FULLPOP, "ULTRASAT").population == "fullpop"
+    assert mission_yields.load_results(FULLPOP, "ULTRASAT").population == "fullpop"
 
 
 def test_the_rate_follows_the_recorded_model(tmp_path):
     """Relabelling a table rescales every count by the ratio of the medians."""
-    reference = paper_results.load_results(LCS, "ULTRASAT")
+    reference = mission_yields.load_results(LCS, "ULTRASAT")
 
     table = QTable.read(LCS)
     table.meta["population_model"] = "fullpop"
     path = tmp_path / "fullpop.ecsv"
     table.write(path)
-    relabelled = paper_results.load_results(path, "ULTRASAT")
+    relabelled = mission_yields.load_results(path, "ULTRASAT")
 
     assert relabelled.population == "fullpop"
     ratio = MERGER_RATE["fullpop"]["mid"] / MERGER_RATE["pixelpop"]["mid"]
@@ -71,7 +73,7 @@ def test_an_unknown_model_is_refused(tmp_path):
     path = tmp_path / "bad.ecsv"
     table.write(path)
     with pytest.raises(SystemExit, match="unknown population model"):
-        paper_results.load_results(path, "ULTRASAT")
+        mission_yields.load_results(path, "ULTRASAT")
 
 
 def test_missions_from_different_models_cannot_be_compared(tmp_path):
@@ -81,9 +83,9 @@ def test_missions_from_different_models_cannot_be_compared(tmp_path):
     table.write(path)
 
     with pytest.raises(SystemExit, match="merger-rate priors differ"):
-        paper_results.check_consistency(
-            paper_results.load_results(LCS, "ULTRASAT"),
-            paper_results.load_results(path, "UVEX"),
+        mission_yields.check_consistency(
+            mission_yields.load_results(LCS, "ULTRASAT"),
+            mission_yields.load_results(path, "UVEX"),
         )
 
 
@@ -99,6 +101,19 @@ def test_results_dir_switches_all_four_tables_at_once():
     args = paper_results.parse_args(["--results-dir", "results/fullpop"])
     assert args.uvex == Path("results/fullpop/uvex.ecsv")
     assert args.allsky == Path("results/fullpop/ultrasat_allsky.ecsv")
+
+
+def test_the_outputs_are_named_after_the_population_model():
+    """One flag switches model; nothing else has to be renamed by hand."""
+    paths = paper_results.output_paths(Path("paper_outputs/fullpop"), "fullpop")
+    assert paths["numbers"] == Path("paper_outputs/fullpop/tables/numbers-fullpop.tex")
+    assert paths["comparison"].name == "mission_comparison-fullpop.tex"
+    assert paths["figure"].parent.name == "figures"
+
+
+def test_the_output_directory_is_left_to_the_model():
+    """Unset, so that run() can derive it from the metadata of the tables."""
+    assert paper_results.parse_args([]).outdir is None
 
 
 def test_an_explicit_table_overrides_the_directory():

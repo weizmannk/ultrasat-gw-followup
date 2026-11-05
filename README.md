@@ -180,18 +180,27 @@ tables shipped here.
 ### 5. Numbers, table and figure of the paper
 
 ```bash
-ugf-paper-results
+ugf-paper-results                              # the PixelPop set
+ugf-paper-results --results-dir results/fullpop
 ```
 
-Reads `results/` and writes to `paper_outputs/`:
+Reads the four tables of one population model and writes to
+`paper_outputs/<model>/`:
 
-- `numbers.tex`, one `\newcommand` per number quoted in Sections 4 and 5;
-- `mission_comparison.tex`, Table 5;
-- `detections_by_area_distance.pdf`, Figure 4.
+- `tables/numbers-<model>.tex`, one `\newcommand` per number quoted in the
+  text;
+- `tables/mission_comparison-<model>.tex`, the mission comparison table;
+- `figures/detections_by_area_distance-<model>.pdf`, detected kilonovae per
+  bin of area and of distance.
 
-It prints every number grouped by section, then checks the qualitative
-statements of the text against the data; a line marked `CHECK THE TEXT` means
-a new run contradicts the prose.
+The model comes from the metadata of the tables, not from the directory they
+sit in, so the outputs are named after what was actually weighted and the two
+sets can never be mixed. The notebook writes its own tables and figures to the
+same two directories.
+
+It prints every number, then checks the qualitative statements of the text
+against the data; a line marked `CHECK THE TEXT` means a new run contradicts
+the prose.
 
 Counts are expected numbers per year at the median merger rate of the table's
 population model — 100 Gpc⁻³ yr⁻¹ for FullPop, 68 for PixelPop — read from the
@@ -209,6 +218,21 @@ ugf-paper-results
 `notebooks/kilonovae_detection_rate.ipynb` builds the per-run rate tables and
 the area–distance figures from the same tables, and
 `scripts/figures/` holds the plan and field-of-view figures.
+
+Its last cell draws one example plan with `scripts/figures/plan_figures.py`,
+from the sky map and schedule kept in `results/<model>/example/<run>/`. Those
+files are versioned on purpose: `data/` and `output/` are working directories
+of the scheduling step and are not, so a figure reading from them could not be
+redrawn from a fresh clone.
+
+`notebooks/scheduler_walkthrough.ipynb` takes that one schedule apart, step by
+step: the localization as the alerts present it, the exposure time each
+direction would cost, the field of regard over the six-hour window, the grid of
+candidate pointings, the plan the solver returned and the proof that it is
+optimal, what the objective actually measures, and why it differs from the
+detection probability the paper sums. It is a tutorial, not part of the paper;
+it computes everything with the same M4OPT functions the scheduler used, read
+back from the schedule's own metadata.
 
 ## Tests
 

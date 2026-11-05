@@ -1,0 +1,180 @@
+# %ECSV 1.0
+# ---
+# datatype:
+# - {name: action, datatype: string, description: Action for the spacecraft}
+# - {name: start_time, datatype: string, description: Start time of segment}
+# - {name: duration, unit: s, datatype: float64, description: Duration of segment}
+# - {name: observer_location.x, unit: km, datatype: float64, description: Position of the spacecraft}
+# - {name: observer_location.y, unit: km, datatype: float64, description: Position of the spacecraft}
+# - {name: observer_location.z, unit: km, datatype: float64, description: Position of the spacecraft}
+# - {name: target_coord.ra, unit: deg, datatype: float64}
+# - {name: target_coord.dec, unit: deg, datatype: float64}
+# - {name: roll, unit: deg, datatype: float64, description: Position angle of the FOV}
+# - {name: field_id, datatype: int64, description: The mission's ID for the field observed}
+# - {name: bandpass, datatype: string, description: Detector bandpass}
+# meta: !!omap
+# - {command: /home/weizmann.kiendrebeogo/CBC/SCHEDULING/ultrasat-gw-followup/.venv/bin/m4opt schedule data/skymaps/O5a/597.fits output/ultrasat_lcs/schedules/O5a/597.ecsv
+#     --mission=ultrasat --skygrid=non-overlap --bandpass=NUV --nside=128 --absmag-mean=-16.0 --absmag-stdev=1.3 --snr=5.0 --delay=15min
+#     --deadline=6hour '--exptime-min=300 s' '--exptime-max=inf s' --cutoff=0.1 --visits=2 --cadence=30min --appmag-dist --timelimit=6hour
+#     --memory=30GiB --jobs=0 --write-progress=output/ultrasat_lcs/progress/O5a/PROGRESS_597.ecsv}
+# - {version: 4.0.0}
+# - args:
+#     absmag_mean: -16.0
+#     absmag_stdev: 1.3
+#     appmag_dist: true
+#     bandpass: [NUV, NUV]
+#     cutoff: 0.1
+#     deadline: !astropy.units.Quantity
+#       unit: !astropy.units.Unit {unit: h}
+#       value: 6.0
+#     delay: !astropy.units.Quantity
+#       unit: &id002 !astropy.units.Unit {unit: min}
+#       value: 15.0
+#     event_time: '2012-07-30T13:22:43.735'
+#     exptime_max: !astropy.units.Quantity
+#       unit: &id001 !astropy.units.Unit {unit: s}
+#       value: .inf
+#     exptime_min:
+#     - !astropy.units.Quantity
+#       unit: *id001
+#       value: 300.0
+#     max_fields: 50
+#     mission: ultrasat
+#     nside: 128
+#     skygrid: non-overlap
+#     skymap: data/skymaps/O5a/597.fits
+#     snr: 5.0
+#     time_step: !astropy.units.Quantity
+#       unit: *id002
+#       value: 1.0
+#     visits: 2
+# - {objective_value: 0.8879477266396694}
+# - {best_bound: 0.8879477266396694}
+# - {solution_status: integer optimal solution}
+# - solution_time: !astropy.units.Quantity
+#     unit: *id001
+#     value: 3087.8693029880524
+# - total_time:
+#     observe: !astropy.units.Quantity
+#       unit: *id001
+#       value: 18375.411359483318
+#     slack: !astropy.units.Quantity
+#       unit: *id001
+#       value: 580.7535587732797
+#     slew: !astropy.units.Quantity
+#       unit: *id001
+#       value: 1743.8350817434027
+# - __serialized_columns__:
+#     duration:
+#       __class__: astropy.units.quantity.Quantity
+#       unit: !astropy.units.Unit {unit: s}
+#       value: !astropy.table.SerializedColumn {name: duration}
+#     observer_location:
+#       __class__: astropy.coordinates.earth.EarthLocation
+#       __info__: {description: Position of the spacecraft}
+#       ellipsoid: WGS84
+#       x: !astropy.table.SerializedColumn
+#         __class__: astropy.units.quantity.Quantity
+#         __info__: {description: Position of the spacecraft}
+#         unit: &id003 !astropy.units.Unit {unit: km}
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: observer_location.x}
+#       y: !astropy.table.SerializedColumn
+#         __class__: astropy.units.quantity.Quantity
+#         __info__: {description: Position of the spacecraft}
+#         unit: *id003
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: observer_location.y}
+#       z: !astropy.table.SerializedColumn
+#         __class__: astropy.units.quantity.Quantity
+#         __info__: {description: Position of the spacecraft}
+#         unit: *id003
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: observer_location.z}
+#     roll:
+#       __class__: astropy.units.quantity.Quantity
+#       __info__: {description: Position angle of the FOV}
+#       unit: &id004 !astropy.units.Unit {unit: deg}
+#       value: !astropy.table.SerializedColumn
+#         __class__: astropy.utils.masked.core.MaskedNDArray
+#         data: !astropy.table.SerializedColumn {name: roll}
+#     start_time:
+#       __class__: astropy.time.core.Time
+#       format: iso
+#       in_subfmt: '*'
+#       out_subfmt: '*'
+#       precision: 3
+#       scale: utc
+#       value: !astropy.table.SerializedColumn {name: start_time}
+#     target_coord:
+#       __class__: astropy.coordinates.sky_coordinate.SkyCoord
+#       __info__: {description: Coordinates of the center of the FOV}
+#       dec: !astropy.table.SerializedColumn
+#         __class__: astropy.coordinates.angles.core.Latitude
+#         unit: *id004
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: target_coord.dec}
+#       frame: icrs
+#       ra: !astropy.table.SerializedColumn
+#         __class__: astropy.coordinates.angles.core.Longitude
+#         unit: *id004
+#         value: !astropy.table.SerializedColumn
+#           __class__: astropy.utils.masked.core.MaskedNDArray
+#           data: !astropy.table.SerializedColumn {name: target_coord.ra}
+#         wrap_angle: !astropy.coordinates.Angle
+#           unit: *id004
+#           value: 360.0
+#       representation_type: spherical
+# schema: astropy-2.0
+action start_time duration observer_location.x observer_location.y observer_location.z target_coord.ra target_coord.dec roll field_id bandpass
+observe "2012-07-30 13:37:43.735" 636.3790377820926 -8917.170580631153 -40897.688404176224 -5136.039521941035 332.99 -4.0 -124.38681060375266 112 NUV
+slew "2012-07-30 13:48:20.114" 90.97082072092171 "" "" "" "" "" "" "" ""
+observe "2012-07-30 13:49:51.085" 636.3790377820926 -8914.217821617329 -40920.25713758054 -4953.717071062996 347.64 -26.67 -84.50738742902764 67 NUV
+slew "2012-07-30 14:00:27.464" 121.09199920948282 "" "" "" "" "" "" "" ""
+observe "2012-07-30 14:02:28.556" 300.0 -8913.718248018207 -40944.018637722605 -4749.051078066711 0.51 39.76 -130.63856314926142 195 NUV
+slew "2012-07-30 14:07:28.556" 94.19234945678718 "" "" "" "" "" "" "" ""
+observe "2012-07-30 14:09:02.748" 1675.737170649352 -8914.502935024586 -40956.39151895711 -4636.772942897203 22.16 -7.77 -106.81326296311366 103 NUV
+slew "2012-07-30 14:36:58.485" 64.58365065663017 "" "" "" "" "" "" "" ""
+observe "2012-07-30 14:38:03.069" 300.0 -8926.418452752985 -41009.85790430098 -4096.637091587884 1.84 -23.61 -94.13152559712809 73 NUV
+slew "2012-07-30 14:43:03.069" 79.11333271932946 "" "" "" "" "" "" "" ""
+observe "2012-07-30 14:44:22.182" 300.0 -8930.796768760472 -41021.02912474935 -3969.9159356244477 28.55 3.75 -109.36298756733707 125 NUV
+slew "2012-07-30 14:49:22.182" 95.36453428539934 "" "" "" "" "" "" "" ""
+observe "2012-07-30 14:50:57.547" 300.0 -8936.01576438359 -41032.41415541484 -3834.5339101889003 336.88 9.78 -136.66108480484394 142 NUV
+slew "2012-07-30 14:55:57.547" 83.4183873665873 "" "" "" "" "" "" "" ""
+observe "2012-07-30 14:57:20.965" 636.3790377820926 -8941.698105580557 -41043.16051009021 -3700.1987138238296 339.97 -14.98 -100.98296702501119 90 NUV
+slew "2012-07-30 15:07:57.344" 75.28808754056078 "" "" "" "" "" "" "" ""
+observe "2012-07-30 15:09:12.632" 300.0 -8953.805004362976 -41062.220144464045 -3443.2753678201057 15.1 -19.33 -100.85736049231076 79 NUV
+slew "2012-07-30 15:14:12.632" 46.3039214003236 "" "" "" "" "" "" "" ""
+observe "2012-07-30 15:14:58.936" 1570.9156595980637 -8960.398365009767 -41071.026294169314 -3314.858225158198 29.1 -21.2 -103.79780513824306 76 NUV
+slew "2012-07-30 15:41:09.852" 76.38217706727211 "" "" "" "" "" "" "" ""
+observe "2012-07-30 15:42:26.234" 300.0 -8997.434766294879 -41107.91458044323 -2676.5142106554545 353.76 -12.23 -103.93517912503691 96 NUV
+slew "2012-07-30 15:47:26.234" 82.12162390670447 "" "" "" "" "" "" "" ""
+observe "2012-07-30 15:48:48.356" 2231.9157361479647 -9007.21933998365 -41115.13981156903 -2522.5796843008584 36.3 -9.02 -107.66671448300674 100 NUV
+slew "2012-07-30 16:26:00.272" 107.24177059587768 "" "" "" "" "" "" "" ""
+observe "2012-07-30 16:27:47.513" 636.3790377820926 -9074.352116659487 -41146.57726625947 -1542.1488542697002 332.99 -4.0 -124.38681060375266 112 NUV
+slew "2012-07-30 16:38:23.892" 97.90712096102584 "" "" "" "" "" "" "" ""
+observe "2012-07-30 16:40:01.799" 300.0 -9097.189262254271 -41151.53032111421 -1223.7691092104435 28.55 3.75 -109.36298756733707 125 NUV
+slew "2012-07-30 16:45:01.799" 85.13822560922361 "" "" "" "" "" "" "" ""
+observe "2012-07-30 16:46:26.938" 300.0 -9109.342233707795 -41153.138551706965 -1055.3167226413532 0.51 39.76 -130.63856314926142 195 NUV
+slew "2012-07-30 16:51:26.938" 76.79728098012745 "" "" "" "" "" "" "" ""
+observe "2012-07-30 16:52:43.735" 300.0 -9121.299916399586 -41154.04496021602 -889.7065797960416 336.88 9.78 -136.66108480484394 142 NUV
+slew "2012-07-30 16:57:43.735" 83.4183873665873 "" "" "" "" "" "" "" ""
+observe "2012-07-30 16:59:07.153" 636.3790377820926 -9133.49867070193 -41154.28652801152 -720.4981267881133 339.97 -14.98 -100.98296702501119 90 NUV
+slew "2012-07-30 17:09:43.532" 46.78881769681925 "" "" "" "" "" "" "" ""
+observe "2012-07-30 17:10:30.321" 300.0 -9155.191403154062 -41153.011846863235 -417.6968764092973 353.76 -12.23 -103.93517912503691 96 NUV
+slew "2012-07-30 17:15:30.321" 54.27839823243975 "" "" "" "" "" "" "" ""
+observe "2012-07-30 17:16:24.600" 300.0 -9166.359641302235 -41151.49303258845 -260.2146842764266 1.84 -23.61 -94.13152559712809 73 NUV
+slew "2012-07-30 17:21:24.600" 46.77808935948767 "" "" "" "" "" "" "" ""
+observe "2012-07-30 17:22:11.378" 636.3790377820926 -9177.199462493105 -41149.44294629367 -105.89809295841422 347.64 -26.67 -84.50738742902764 67 NUV
+slew "2012-07-30 17:32:47.757" 79.48734507214624 "" "" "" "" "" "" "" ""
+observe "2012-07-30 17:43:47.998" 1675.737170649352 -9216.447499352515 -41136.93623698689 470.89557875299926 22.16 -7.77 -106.81326296311366 103 NUV
+slew "2012-07-30 18:11:43.735" 50.188420082321514 "" "" "" "" "" "" "" ""
+observe "2012-07-30 18:12:33.923" 1570.9156595980637 -9263.66074044571 -41109.09895538948 1231.243854233138 29.1 -21.2 -103.79780513824306 76 NUV
+slew "2012-07-30 18:38:44.839" 46.3039214003236 "" "" "" "" "" "" "" ""
+observe "2012-07-30 18:39:31.143" 300.0 -9300.21374153784 -41072.83426440543 1926.230536729284 15.1 -19.33 -100.85736049231076 79 NUV
+slew "2012-07-30 18:44:31.143" 60.67642005702393 "" "" "" "" "" "" "" ""
+observe "2012-07-30 18:45:31.819" 2231.9157361479647 -9307.12212904312 -41063.59774392507 2077.910033259052 36.3 -9.02 -107.66671448300674 100 NUV
