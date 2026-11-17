@@ -81,7 +81,8 @@ astropy_header = true
 doctest_optionflags = ["FLOAT_CMP", "IGNORE_EXCEPTION_DETAIL"]
 
 [tool.ruff]
-src = ["src", "scripts", "tests"]
+# scripts/figures is listed too: its modules are imported by name in the tests.
+src = ["src", "scripts", "scripts/figures", "tests"]
 # The notebook is a deliverable, not source: its cells are kept as the
 # author wrote them.
 extend-exclude = ["*.ipynb"]

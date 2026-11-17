@@ -217,7 +217,34 @@ ugf-paper-results
 
 `notebooks/kilonovae_detection_rate.ipynb` builds the per-run rate tables and
 the area–distance figures from the same tables, and
-`scripts/figures/` holds the plan and field-of-view figures.
+`scripts/figures/` holds the plan, field-of-view and sky-grid figures.
+
+`scripts/figures/sky_grid.py` builds the generic grid of candidate pointings
+from the field of view alone. The circle inscribed in the square field stays
+inside it at any roll angle, so a grid covers the sky at every orientation
+exactly when no position is further from the nearest centre than that radius.
+The grid is the smallest geodesic grid of M4OPT that meets the condition: 362
+pointings, no position further than 6.83 degrees from a centre, the two numbers
+the paper quotes.
+
+```bash
+python scripts/figures/sky_grid.py --outdir paper_outputs/pixelpop/figures
+```
+
+It writes to a `skygrid/` directory under `--outdir`: `geodesic_fields.pdf`,
+the field of view at every pointing on a globe, and `geodesic_coverage.pdf`, a
+map of how many inscribed circles contain each position. Each panel is its own
+file, so the document decides whether they sit side by side. `--gif` also
+animates the fields over roll angles from 0 to 90 degrees.
+
+The grid is derived rather than taken on trust, and checked against the
+mission's own: M4OPT defines `ultrasat.skygrid["geodesic"]` only after 4.0.1,
+so with the pinned release the script reports that it could not compare, and
+the matching test skips. Once the pin moves past that release, both compare for
+real, and the script refuses to draw a grid the runs would not use. `--skygrid`
+draws the mission's survey grids instead, `allsky` and `non-overlap`, which
+make a useful contrast: the first covers the sky at any roll, the second tiles
+it without redundancy and so leaves gaps between the inscribed circles.
 
 Its last cell draws one example plan with `scripts/figures/plan_figures.py`,
 from the sky map and schedule kept in `results/<model>/example/<run>/`. Those
