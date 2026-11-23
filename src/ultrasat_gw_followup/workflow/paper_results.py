@@ -1,7 +1,7 @@
 """Numbers, table and figure of the paper, from the final result tables.
 
-Every value the paper quotes is computed from the three post-processed result
-tables and the observing-scenarios event table. Re-running a mission and then
+Every value the paper quotes is computed from the two post-processed result
+tables, ULTRASAT and UVEX, and the observing-scenarios event table. Re-running a mission and then
 this script is enough to bring the paper up to date; nothing is typed by hand.
 
 The statistics themselves live in
@@ -25,7 +25,7 @@ Outputs
 ``tables/numbers-<model>.tex``
     One ``\\newcommand`` per number quoted in the text.
 ``tables/mission_comparison-<model>.tex``
-    ULTRASAT (LCS) and UVEX per sub-period.
+    ULTRASAT and UVEX per sub-period.
 ``figures/detections_by_area_distance-<model>.pdf`` (and ``.png``)
     Detected kilonovae per bin of localization area and of luminosity
     distance, for both missions.
@@ -78,11 +78,15 @@ DEFAULT_RESULTS = RESULTS / "pixelpop"
 #: Outputs, likewise one directory per population model.
 PAPER_OUTPUTS = Path("paper_outputs")
 
+#: Sky grid of the ULTRASAT run the paper is built from. The survey grids,
+#: "allsky" and "non-overlap", are still scheduled and can be read with --grid.
+DEFAULT_GRID = "geodesic"
+
 #: Suffix the macro names give each sub-period.
 LETTER = dict(zip(RUNS, "ABC"))
 
 #: Macro prefix and report label of each scheduled mission.
-MISSIONS = (("us", "ULTRASAT LCS"), ("as", "ULTRASAT AllSS"), ("uv", "UVEX"))
+MISSIONS = (("us", "ULTRASAT"), ("uv", "UVEX"))
 
 #: Categorical colours (validated for colour-vision deficiencies).
 COLORS = {"ULTRASAT": "#2a78d6", "UVEX": "#eb6834"}
@@ -95,13 +99,13 @@ COLORS = {"ULTRASAT": "#2a78d6", "UVEX": "#eb6834"}
 # merges them in the order the paper reads and formats them in one pass. The
 # format is the precision the paper prints, and the only place it is chosen.
 # -----------------------------------------------------------------------------
-def collect_numbers(us, al, uv, snr) -> dict:
+def collect_numbers(us, uv, snr) -> dict:
     """Every number quoted in the text, as LaTeX macro name -> formatted value.
 
     Parameters
     ----------
-    us, al, uv : Results
-        ULTRASAT on the LCS grid, ULTRASAT on the all-sky grid, and UVEX.
+    us, uv : Results
+        ULTRASAT and UVEX, scheduled on the same events.
     snr : numpy.ndarray
         Network SNR of each event, in the order of the tables.
 
@@ -109,14 +113,13 @@ def collect_numbers(us, al, uv, snr) -> dict:
     -------
     dict
     """
-    y = {"us": yields(us), "as": yields(al), "uv": yields(uv)}
+    y = {"us": yields(us), "uv": yields(uv)}
     gw = gw_counts(us)
-    missions = (("us", us), ("as", al), ("uv", uv))
+    missions = (("us", us), ("uv", uv))
     values = (
         _per_run(y, gw)
         | _totals(y, gw, missions, us)
         | _percentiles(us)
-        | _grids(y, us, al)
         | _detection_origins(us, uv)
         | _both_missions(y, us, uv)
         | _snr_losses(snr, us, uv)
@@ -171,31 +174,11 @@ def _totals(y, gw, missions, sample) -> dict:
 
 
 def _percentiles(us) -> dict:
-    """90th percentiles written in the boxes of the LCS area-distance figures."""
+    """90th percentiles written in the boxes of the area-distance figures."""
     return {
         f"us{key}{LETTER[run]}": (value, ".0f")
         for run in RUNS
         for key, value in selection_percentiles(us, run).items()
-    }
-
-
-def _grids(y, us, al) -> dict:
-    """The two sky grids: how the O5a selections overlap, and the spread."""
-    o5a = us.run == "O5a"
-
-    def spread(index):
-        """Largest relative difference between the grids, over the sub-periods."""
-        return 100 * max(abs(y["as"][r][index] / y["us"][r][index] - 1) for r in RUNS)
-
-    return {
-        "gridNlcsA": (np.sum(us.selected & o5a), "d"),
-        "gridNallA": (np.sum(al.selected & o5a), "d"),
-        "gridNcommonA": (np.sum(us.selected & al.selected & o5a), "d"),
-        "gridNlcsOnlyA": (np.sum(us.selected & ~al.selected & o5a), "d"),
-        "gridNallOnlyA": (np.sum(al.selected & ~us.selected & o5a), "d"),
-        "gridSelDiff": (spread(0), ".0f"),
-        "gridDetDiff": (spread(1), ".0f"),
-        "gridDetDiffTot": (100 * abs(y["as"]["O5"][1] / y["us"]["O5"][1] - 1), ".0f"),
     }
 
 
@@ -280,7 +263,7 @@ def write_numbers(path, numbers, sources) -> None:
 
 
 def write_comparison_table(path, us, uv) -> None:
-    """ULTRASAT (LCS) and UVEX per sub-period.
+    """ULTRASAT and UVEX per sub-period.
 
     Every quantity the caption states is read back from the tables, so that it
     cannot drift from the run it describes -- the population model in
@@ -465,30 +448,53 @@ def check_claims(n: dict, us: Results, uv: Results) -> list:
             "the UVEX plans are further from optimal than ULTRASAT's",
             f["uvGapPct"] > f["usGapPct"],
         ),
-        (
-            "the two grids agree to within 5% in detections over O5",
-            f["gridDetDiffTot"] <= 5,
+    ]
+
+
+def _row(label, cells) -> str:
+    """One ``label  O5a O5b O5c O5`` line of the yields table."""
+    return f"  {label:28s}" + "".join(f"{cell:>8}" for cell in cells)
+
+
+def _per_run_line(label, n, name) -> str:
+    """A row of the yields table, from the macros ``nameA..nameTot``."""
+    return _row(label, [n[f"{name}{letter}"] for letter in "ABC"] + [n[f"{name}Tot"]])
+
+
+def _other_run_lines(m: Results) -> list:
+    """Rows for a run that has no macros, formatted like the ones that do."""
+    y = yields(m)
+    return [
+        _row(
+            f"{m.name} selected",
+            [f"{y[r][0]:.2f}" for r in RUNS] + [f"{y['O5'][0]:.1f}"],
+        ),
+        _row(
+            f"{m.name} detected",
+            [f"{y[r][1]:.2f}" for r in RUNS] + [f"{y['O5'][1]:.2f}"],
         ),
     ]
 
 
-def _per_run_line(label, n, name) -> str:
-    """One ``label  O5a O5b O5c O5`` line, from the macros ``nameA..nameTot``."""
-    cells = [n[f"{name}{letter}"] for letter in "ABC"] + [n[f"{name}Tot"]]
-    return f"  {label:28s}" + "".join(f"{cell:>8}" for cell in cells)
-
-
-def print_report(n: dict, claims: list, us, al, uv) -> None:
+def print_report(n: dict, claims: list, us, uv, others=()) -> None:
     """Every quoted number, grouped as the paper reads, then the checks."""
+    # The ULTRASAT rows name their grid, like the runs shown for inspection:
+    # otherwise nothing says which of them the quoted numbers come from.
+    labels = dict(MISSIONS) | {"us": f"ULTRASAT {setting(us, 'skygrid')}"}
     header = "Yields per year (lambda)"
     print(f"  {header:28s}" + "".join(f"{h:>8}" for h in (*RUNS, "O5")))
     print(_per_run_line("GW (BNS + NSBH)", n, "gw"))
-    for prefix, label in MISSIONS:
-        print(_per_run_line(f"{label} selected", n, f"{prefix}Sel"))
-        print(_per_run_line(f"{label} detected", n, f"{prefix}Det"))
+    for prefix, _ in MISSIONS:
+        print(_per_run_line(f"{labels[prefix]} selected", n, f"{prefix}Sel"))
+        print(_per_run_line(f"{labels[prefix]} detected", n, f"{prefix}Det"))
     print(_per_run_line("UVEX / ULTRASAT detected", n, "ratioDet"))
+    # Shown for inspection only: everything quoted below, and every macro,
+    # comes from the ULTRASAT run above.
+    for other in others:
+        for line in _other_run_lines(other):
+            print(line)
 
-    print("\n90th percentiles, ULTRASAT LCS    O5a / O5b / O5c")
+    print("\n90th percentiles, ULTRASAT       O5a / O5b / O5c")
     for key in ("DistAll", "DistTrig", "DistDet", "AreaTrig", "AreaDet"):
         values = " / ".join(n[f"us{key}{letter}"] for letter in "ABC")
         print(f"  {key:9s} {values}")
@@ -498,12 +504,12 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
         f"{n['usFracDistNearest']}% (<200 Mpc), {n['usFracDistMid']}% (500-700 Mpc)"
     )
 
-    print("\nULTRASAT LCS")
+    print("\nULTRASAT")
+    # The O5 total is the last column of the table above, and the conversion
+    # rate belongs with UVEX's below; only the split is new here.
     print(
-        f"  detected over O5: {n['usDetTot']} "
-        f"({n['usDetBNS']} BNS, {n['usDetNSBH']} NSBH); "
-        f"detected/selected {n['usEffMin']}-{n['usEffMax']}%; "
-        f"{n['usDetFracGW']}% of the GW events"
+        f"  detections by source class: {n['usDetBNS']} BNS, "
+        f"{n['usDetNSBH']} NSBH; {n['usDetFracGW']}% of the GW events"
     )
     print(
         f"  growth O5a->O5c: GW x{n['gwGrowth']}, "
@@ -518,17 +524,6 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
         f"{n['gwAreaMedA']} / {n['gwAreaMedB']} / {n['gwAreaMedC']}; "
         f"distance (Mpc): "
         f"{n['gwDistMedA']} / {n['gwDistMedB']} / {n['gwDistMedC']}"
-    )
-
-    print("\nSky grids")
-    print(
-        f"  O5a selected: LCS {n['gridNlcsA']}, AllSS {n['gridNallA']}, "
-        f"common {n['gridNcommonA']}, LCS only {n['gridNlcsOnlyA']}, "
-        f"AllSS only {n['gridNallOnlyA']}"
-    )
-    print(
-        f"  largest difference per sub-period: selected {n['gridSelDiff']}%, "
-        f"detected {n['gridDetDiff']}%; over O5 detected {n['gridDetDiffTot']}%"
     )
 
     print("\nULTRASAT and UVEX")
@@ -559,9 +554,9 @@ def print_report(n: dict, claims: list, us, al, uv) -> None:
             f"ULTRASAT -{n[f'snrUsLoss{threshold}']}%, "
             f"UVEX -{n[f'snrUvLoss{threshold}']}%"
         )
-    for prefix, label in MISSIONS:
+    for prefix, _ in MISSIONS:
         print(
-            f"  {label:15s} time limit {n[prefix + 'LimitPct']}% of the events "
+            f"  {labels[prefix]:18s} time limit {n[prefix + 'LimitPct']}% of the events "
             f"({n[prefix + 'LimitSharePct']}% of the detections), "
             f"crashed {n[prefix + 'CrashPct']}%, "
             f"median gap {n[prefix + 'GapPct']}%, "
@@ -582,10 +577,15 @@ def parse_args(argv=None):
         "--results-dir",
         type=Path,
         default=DEFAULT_RESULTS,
-        help="directory holding the four tables of one population model",
+        help="directory holding the tables of one population model",
     )
-    parser.add_argument("--lcs", help="ULTRASAT result table, LCS grid")
-    parser.add_argument("--allsky", help="ULTRASAT result table, AllSS grid")
+    parser.add_argument(
+        "--grid",
+        default=DEFAULT_GRID,
+        help="sky grid of the ULTRASAT run to read, as ultrasat_<grid>.ecsv "
+        "inside --results-dir",
+    )
+    parser.add_argument("--ultrasat", help="ULTRASAT result table, as a path")
     parser.add_argument("--uvex", help="UVEX result table")
     parser.add_argument(
         "--scenarios",
@@ -600,63 +600,93 @@ def parse_args(argv=None):
 
     args = parser.parse_args(argv)
     # Each table defaults to its own name inside --results-dir, so switching
-    # population model is one flag rather than four paths.
+    # population model or sky grid is one flag rather than three paths.
     for option, name in (
-        ("lcs", "ultrasat_lcs"),
-        ("allsky", "ultrasat_allsky"),
+        ("ultrasat", f"ultrasat_{args.grid}"),
         ("uvex", "uvex"),
         ("scenarios", "observing-scenarios"),
     ):
         if getattr(args, option) is None:
             setattr(args, option, args.results_dir / f"{name}.ecsv")
+
+    if not Path(args.ultrasat).exists():
+        grids = sorted(
+            path.stem.removeprefix("ultrasat_")
+            for path in args.results_dir.glob("ultrasat_*.ecsv")
+        )
+        raise SystemExit(f"{args.ultrasat} not found; --grid can be {grids}")
     return args
 
 
-def output_paths(outdir, model) -> dict:
+def output_paths(outdir, model, grid) -> dict:
     """Where each output goes, split the way the paper's LaTeX includes them.
+
+    The sky grid is part of every name: two ULTRASAT runs of the same
+    population model would otherwise write over each other.
 
     Parameters
     ----------
     outdir : pathlib.Path
         Root directory, usually ``paper_outputs/<model>``.
     model : str
-        Population model of the tables, which names every file.
+        Population model of the tables.
+    grid : str
+        Sky grid of the ULTRASAT run.
 
     Returns
     -------
     dict
     """
+    stem = f"{grid}-{model}"
     return {
-        "numbers": outdir / "tables" / f"numbers-{model}.tex",
-        "comparison": outdir / "tables" / f"mission_comparison-{model}.tex",
-        "figure": outdir / "figures" / f"detections_by_area_distance-{model}.pdf",
+        "numbers": outdir / "tables" / f"numbers-{stem}.tex",
+        "comparison": outdir / "tables" / f"mission_comparison-{stem}.tex",
+        "figure": outdir / "figures" / f"detections_by_area_distance-{stem}.pdf",
     }
+
+
+def other_runs(args, us) -> list:
+    """The remaining ULTRASAT runs of ``--results-dir``, for the report only.
+
+    A run is shown only when it holds the same events weighted by the same
+    population model, so that its row can be read against the others.
+    """
+    found = []
+    for path in sorted(args.results_dir.glob("ultrasat_*.ecsv")):
+        if path == Path(args.ultrasat):
+            continue
+        other = load_results(path, f"ULTRASAT {path.stem.removeprefix('ultrasat_')}")
+        if other.population == us.population and np.array_equal(other.key, us.key):
+            found.append(other)
+        else:
+            print(f"{path}: not the same sample, left out of the report")
+    return found
 
 
 def run(argv=None) -> dict:
     """Run the full analysis; return the numbers so a notebook can use them."""
     args = parse_args(argv)
-    us = load_results(args.lcs, "ULTRASAT")
-    al = load_results(args.allsky, "ULTRASAT AllSS")
+    us = load_results(args.ultrasat, "ULTRASAT")
     uv = load_results(args.uvex, "UVEX")
-    check_consistency(us, al, uv)
+    check_consistency(us, uv)
     snr = network_snr(us, args.scenarios)
 
     # The model comes from the tables, not from the directory they sit in, so
     # the outputs are named after what was actually weighted.
     model = us.population
+    # Both read from the tables, not from the options, so that --ultrasat with
+    # an explicit path still names its outputs after what it actually read.
     out = args.outdir or PAPER_OUTPUTS / model
-    paths = output_paths(out, model)
+    paths = output_paths(out, model, setting(us, "skygrid"))
     for path in paths.values():
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    numbers = collect_numbers(us, al, uv, snr)
+    numbers = collect_numbers(us, uv, snr)
     write_numbers(
         paths["numbers"],
         numbers,
         {
-            "ULTRASAT LCS": args.lcs,
-            "ULTRASAT AllSS": args.allsky,
+            "ULTRASAT": args.ultrasat,
             "UVEX": args.uvex,
             "Scenarios": args.scenarios,
         },
@@ -664,7 +694,7 @@ def run(argv=None) -> dict:
     write_comparison_table(paths["comparison"], us, uv)
     plot_detections_by_area_distance(paths["figure"], us, uv)
 
-    print_report(numbers, check_claims(numbers, us, uv), us, al, uv)
+    print_report(numbers, check_claims(numbers, us, uv), us, uv, other_runs(args, us))
     print(f"\n{len(numbers)} macros, from the GWTC-5.0 {model} model:")
     for path in paths.values():
         print(f"  {path}")

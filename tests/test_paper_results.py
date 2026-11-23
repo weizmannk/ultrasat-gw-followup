@@ -89,26 +89,44 @@ def test_missions_from_different_models_cannot_be_compared(tmp_path):
         )
 
 
-def test_the_default_results_directory_is_the_pixelpop_set():
-    """The paper is built from PixelPop; FullPop is kept only for comparison."""
+def test_the_default_run_is_pixelpop_on_the_geodesic_grid():
+    """What the paper is built from: one population model, one sky grid."""
     args = paper_results.parse_args([])
     assert args.results_dir == Path("results") / "pixelpop"
-    assert args.lcs == args.results_dir / "ultrasat_lcs.ecsv"
+    assert args.grid == "geodesic"
+    assert args.ultrasat == args.results_dir / "ultrasat_geodesic.ecsv"
     assert args.scenarios == args.results_dir / "observing-scenarios.ecsv"
 
 
-def test_results_dir_switches_all_four_tables_at_once():
-    args = paper_results.parse_args(["--results-dir", "results/fullpop"])
-    assert args.uvex == Path("results/fullpop/uvex.ecsv")
-    assert args.allsky == Path("results/fullpop/ultrasat_allsky.ecsv")
+def test_one_word_switches_the_sky_grid():
+    """The survey grids stay readable without retyping any path."""
+    args = paper_results.parse_args(["--grid", "allsky"])
+    assert args.ultrasat == Path("results/pixelpop/ultrasat_allsky.ecsv")
+    assert args.uvex == Path("results/pixelpop/uvex.ecsv")
 
 
-def test_the_outputs_are_named_after_the_population_model():
-    """One flag switches model; nothing else has to be renamed by hand."""
-    paths = paper_results.output_paths(Path("paper_outputs/fullpop"), "fullpop")
-    assert paths["numbers"] == Path("paper_outputs/fullpop/tables/numbers-fullpop.tex")
-    assert paths["comparison"].name == "mission_comparison-fullpop.tex"
+def test_an_unknown_grid_lists_the_ones_available():
+    with pytest.raises(SystemExit, match=r"--grid can be \[.*'geodesic'"):
+        paper_results.parse_args(["--grid", "handwaving"])
+
+
+def test_the_outputs_are_named_after_the_grid_and_the_model():
+    """Both, so that two ULTRASAT runs never write over each other."""
+    paths = paper_results.output_paths(
+        Path("paper_outputs/fullpop"), "fullpop", "allsky"
+    )
+    assert paths["numbers"] == Path(
+        "paper_outputs/fullpop/tables/numbers-allsky-fullpop.tex"
+    )
+    assert paths["comparison"].name == "mission_comparison-allsky-fullpop.tex"
     assert paths["figure"].parent.name == "figures"
+
+
+def test_two_grids_do_not_share_an_output_name():
+    root = Path("paper_outputs/pixelpop")
+    geodesic = paper_results.output_paths(root, "pixelpop", "geodesic")
+    allsky = paper_results.output_paths(root, "pixelpop", "allsky")
+    assert set(geodesic.values()).isdisjoint(allsky.values())
 
 
 def test_the_output_directory_is_left_to_the_model():
@@ -119,4 +137,4 @@ def test_the_output_directory_is_left_to_the_model():
 def test_an_explicit_table_overrides_the_directory():
     args = paper_results.parse_args(["--uvex", "elsewhere/uvex.ecsv"])
     assert args.uvex == "elsewhere/uvex.ecsv"
-    assert args.lcs == Path("results/pixelpop/ultrasat_lcs.ecsv")
+    assert args.ultrasat == Path("results/pixelpop/ultrasat_geodesic.ecsv")

@@ -4,13 +4,16 @@ Everything needed to reproduce the paper, from the Zenodo archive to the
 numbers, the table and the figure: download, unpack, schedule, post-process,
 report.
 
-Three runs are compared, one configuration file each:
+The paper compares ULTRASAT and UVEX on the same events. ULTRASAT is
+scheduled on the generic geodesic grid; the two ULTRASAT survey grids are also
+scheduled and stay available for comparison. One configuration file each:
 
 | Run | Mission | Sky grid | Kilonova `absmag_mean` | Configuration |
 |---|---|---|---|---|
+| Geodesic | ULTRASAT | `geodesic` | −16.0 | `config/ultrasat_geodesic.ini` |
+| UVEX | UVEX | single grid | −15.6 | `config/uvex.ini` |
 | LCS | ULTRASAT | `non-overlap` | −16.0 | `config/ultrasat_lcs.ini` |
 | AllSS | ULTRASAT | `allsky` | −16.0 | `config/ultrasat_allsky.ini` |
-| UVEX | UVEX | single grid | −15.6 | `config/uvex.ini` |
 
 Everything else is shared: SNR 5, two visits at least 30 min apart, exposures
 from 300 s, observations between 15 min and 6 h after the merger, objective
@@ -180,22 +183,30 @@ tables shipped here.
 ### 5. Numbers, table and figure of the paper
 
 ```bash
-ugf-paper-results                              # the PixelPop set
+ugf-paper-results                              # PixelPop, geodesic grid
 ugf-paper-results --results-dir results/fullpop
+ugf-paper-results --grid allsky                # another ULTRASAT run
 ```
 
-Reads the four tables of one population model and writes to
-`paper_outputs/<model>/`:
+Reads one ULTRASAT table and the UVEX table of a population model and writes
+to `paper_outputs/<model>/`:
 
-- `tables/numbers-<model>.tex`, one `\newcommand` per number quoted in the
-  text;
-- `tables/mission_comparison-<model>.tex`, the mission comparison table;
-- `figures/detections_by_area_distance-<model>.pdf`, detected kilonovae per
-  bin of area and of distance.
+- `tables/numbers-<grid>-<model>.tex`, one `\newcommand` per number quoted in
+  the text;
+- `tables/mission_comparison-<grid>-<model>.tex`, the mission comparison table;
+- `figures/detections_by_area_distance-<grid>-<model>.pdf`, detected kilonovae
+  per bin of area and of distance.
 
-The model comes from the metadata of the tables, not from the directory they
-sit in, so the outputs are named after what was actually weighted and the two
-sets can never be mixed. The notebook writes its own tables and figures to the
+The sky grid is part of every name, so two ULTRASAT runs of the same
+population model never write over each other. It is read from the result
+table, not from `--grid`, so an explicit `--ultrasat` path is still named after
+what it actually read.
+
+`--grid` names the ULTRASAT run, read as `ultrasat_<grid>.ecsv` inside
+`--results-dir`; give an unknown one and the error lists what is there. The
+population model comes from the metadata of the tables, not from the directory
+they sit in, so the outputs are named after what was actually weighted and the
+two sets can never be mixed. The notebook writes its own tables and figures to the
 same two directories.
 
 It prints every number, then checks the qualitative statements of the text
