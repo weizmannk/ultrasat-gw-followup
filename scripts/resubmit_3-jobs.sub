@@ -1,0 +1,21 @@
++MaxHours = 24
+universe        = vanilla
+accounting_group = ligo.dev.o4.cbc.pe.bayestar
+initialdir      = /home/weizmann.kiendrebeogo/CBC/SCHEDULING/ultrasat-gw-followup
+executable      = $(wrapper)
+environment     = "OMP_NUM_THREADS=1"
+request_cpus    = 1
+request_memory  = 200000
+request_disk    = 200000000
+output = /home/weizmann.kiendrebeogo/CBC/SCHEDULING/ultrasat-gw-followup/output/ultrasat_geodesic/logs/$(Cluster)_$(Process).out
+error  = /home/weizmann.kiendrebeogo/CBC/SCHEDULING/ultrasat-gw-followup/output/ultrasat_geodesic/logs/$(Cluster)_$(Process).err
+log    = /home/weizmann.kiendrebeogo/CBC/SCHEDULING/ultrasat-gw-followup/output/ultrasat_geodesic/logs/$(Cluster)_$(Process).log
+periodic_release = (HoldReasonCode == 34 || HoldReasonCode == 104 || (HoldReasonCode == 3 && HoldReasonSubCode == 42)) && (NumJobStarts <= 3)
+on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
+on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
+on_exit_hold_subcode = ExitCode
+queue wrapper from (
+  /home/weizmann.kiendrebeogo/CBC/SCHEDULING/ultrasat-gw-followup/output/ultrasat_geodesic/logs/wrapper_O5a_6034.sh
+  /home/weizmann.kiendrebeogo/CBC/SCHEDULING/ultrasat-gw-followup/output/ultrasat_geodesic/logs/wrapper_O5b_8289.sh
+  /home/weizmann.kiendrebeogo/CBC/SCHEDULING/ultrasat-gw-followup/output/ultrasat_geodesic/logs/wrapper_O5c_1645.sh
+)
